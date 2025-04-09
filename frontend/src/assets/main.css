@@ -1,0 +1,27 @@
+@import './base.css';
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-weight: normal;
+}
+
+.p-multiselect-label {
+  flex-wrap: wrap !important;
+}
+
+.p-fileupload {
+  justify-content: start !important;
+}
+
+.p-fileupload-choose-button {
+  background-color: var(--p-indigo-800) !important;
+  color: rgb(255, 255, 255) !important;
+  border-color: var(--p-indigo-800) !important;
+}
+
+/* .p-button {
+  background: var(--p-indigo-800) !important;
+}
+ */
