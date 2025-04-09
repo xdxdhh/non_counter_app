@@ -3,6 +3,7 @@ from typing import Any, TypeVar, cast
 import asyncio
 from pydantic import BaseModel
 
+
 class FlowData(ABC, BaseModel):
 
     @staticmethod

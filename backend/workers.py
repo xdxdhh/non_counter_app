@@ -4,13 +4,14 @@ import requests
 from agents import RunConfig, Runner, Agent, function_tool
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 import typing
-import asyncio
 from prompts import get_data_description_prompt, get_parsing_rules_prompt
 from models import PlatformData, DataDescriptionData, FileData, ParserDefinitionData
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 class Platform(BaseModel):
-    # pk, provider, url, providers
     short_name: str
     name: str
 
@@ -22,7 +23,6 @@ class ParserDefinitionAPI(BaseModel):
 
 class PlatformAgentWorker(FlowWorker):
     def __init__(self):
-        self.brain_token = "102a5cd33241bd15617ac13d90619b6205a02d8f"
 
         self.agent = Agent(
             name="Platform Agent",
@@ -39,9 +39,8 @@ class PlatformAgentWorker(FlowWorker):
 
     @function_tool
     async def fetch_all_platforms():
-        brain_token = "102a5cd33241bd15617ac13d90619b6205a02d8f"
         url = "https://brain.celus.net/knowledgebase/platforms/"
-        headers = {"Authorization": f"Token {brain_token}"}
+        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
         print("Fetching all platforms")
         response = requests.get(url, headers=headers)
         response.raise_for_status()
@@ -54,9 +53,8 @@ class PlatformAgentWorker(FlowWorker):
         Returns them in format parser_name(platforms)c
         """
         print("Fetching all parsers")
-        brain_token = "102a5cd33241bd15617ac13d90619b6205a02d8f"
         url = "https://brain.celus.net/knowledgebase/parsers/"
-        headers = {"Authorization": f"Token {brain_token}"}
+        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
 
         response = requests.get(url, headers=headers)
         response.raise_for_status()
@@ -86,7 +84,7 @@ class PlatformAgentWorker(FlowWorker):
 
 class DataDescriptionWorker(FlowWorker):
     def __init__(self):
-        self.brain_token = "102a5cd33241bd15617ac13d90619b6205a02d8f"  # todo give metrics and metadata access
+        #TODO give metrics and dimensions access
 
         self.agent = Agent(
             name="Data Description Agent",
@@ -103,7 +101,7 @@ class DataDescriptionWorker(FlowWorker):
 
     async def run(
         self, file: FileData
-    ) -> set[DataDescriptionData]:  # todo will return data description data
+    ) -> set[DataDescriptionData]:  
         with open(file.filename, "r") as f:
             content = f.read()
             print(content)
@@ -129,7 +127,7 @@ class ParsingRulesWorker(FlowWorker):
 
     async def run(
         self, data_description: DataDescriptionData, file: FileData
-    ) -> set[ParserDefinitionData]:  # todo output
+    ) -> set[ParserDefinitionData]:
         with open(file.filename, "r") as f:
             content = f.read()
             metrics = data_description.metrics
