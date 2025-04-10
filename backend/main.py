@@ -1,23 +1,15 @@
 from functools import lru_cache
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from base import Runtime
 
-from workers import (
-    FLOW_WORKERS,
-    PlatformAgentWorker,
-    DataDescriptionWorker,
-    ParsingRulesWorker,
-)
-from models import (
-    FLOW_DATA,
-    PlatformData,
-    FileData,
-    DataDescriptionData,
-    ParserDefinitionData,
-)
+from workers import FLOW_WORKERS
+
+
+from models import FLOW_DATA, FileData
+
 
 runtimes: dict[int, Runtime] = {}
 
@@ -59,22 +51,6 @@ def get_runtime(session_id: int):
         return runtimes[session_id]
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
-
-
-@app.post("/new_platform/{session_id}")
-async def check_platform(session_id: int, request: PlatformRequest):
-    print("backend: Checking platform", request.platform)
-    runtime = get_runtime(session_id)
-    runtime.set_state(
-        PlatformData(platform_name=request.platform, exists=False, parser_names=[])
-    )
-    await runtime.run(PlatformAgentWorker())
-
-    platform_after = runtime.get_state("platform_data", PlatformData)
-    if platform_after.exists:
-        return {"exists": True}  # i dont have to send the msg
-    else:
-        return {"exists": False}
 
 
 @app.post("/upload_file/{session_id}")
@@ -127,15 +103,6 @@ async def set_state(request: Request, session_id: int, data_name: str):
     print("received data:", data)
     print("after validation:", flow_data.model_validate(data))
     runtime.set_state(flow_data.model_validate(data))
-
-
-@app.get("/parsing_rules/{session_id}")
-async def get_parsing_rules(session_id: int):
-    runtime = get_runtime(session_id)
-    await runtime.run(ParsingRulesWorker())
-    return runtime.get_state(
-        "parser_definition_data", ParserDefinitionData
-    ).model_dump_json(indent=4)
 
 
 @app.get("/worker/{session_id}/{worker_name}")

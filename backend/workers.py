@@ -128,7 +128,7 @@ class ParsingRulesWorker(FlowWorker):
     async def run(
         self, data_description: DataDescriptionData, file: FileData
     ) -> set[ParserDefinitionData]:
-        with open(file.filename, "r") as f:
+        with open(file.filename, "r") as f: #TODO Add additional user data
             content = f.read()
             metrics = data_description.metrics
             dimensions = data_description.dimensions
@@ -141,7 +141,7 @@ class ParsingRulesWorker(FlowWorker):
             config = RunConfig(
                 workflow_name="test_app_2", trace_id="trace_parsing_rules"
             )  # todo
-            # dostane additional data od uzivatele i ten vstupni soubor
+            
             result = await Runner.run(self.agent, content, run_config=config)
             print("Parsing rules generated\n")
             print(result.final_output)
