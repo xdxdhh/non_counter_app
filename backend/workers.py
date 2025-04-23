@@ -4,12 +4,17 @@ import requests
 from agents import RunConfig, Runner, Agent, function_tool
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 import typing
-from prompts import get_data_description_prompt, get_parsing_rules_prompt
+from prompts import (
+    get_data_description_prompt,
+    get_parsing_rules,
+)
 from models import PlatformData, DataDescriptionData, FileData, ParserDefinitionData
 from dotenv import load_dotenv
 import os
+import json
 
 load_dotenv()
+
 
 class Platform(BaseModel):
     short_name: str
@@ -23,7 +28,6 @@ class ParserDefinitionAPI(BaseModel):
 
 class PlatformAgentWorker(FlowWorker):
     def __init__(self):
-
         self.agent = Agent(
             name="Platform Agent",
             handoff_description="Specialist agent for questions about platforms.",
@@ -84,7 +88,7 @@ class PlatformAgentWorker(FlowWorker):
 
 class DataDescriptionWorker(FlowWorker):
     def __init__(self):
-        #TODO give metrics and dimensions access
+        # TODO give metrics and dimensions access
 
         self.agent = Agent(
             name="Data Description Agent",
@@ -99,9 +103,7 @@ class DataDescriptionWorker(FlowWorker):
     def flow_worker_name():
         return "data_description_worker"
 
-    async def run(
-        self, file: FileData
-    ) -> set[DataDescriptionData]:  
+    async def run(self, file: FileData) -> set[DataDescriptionData]:
         with open(file.filename, "r") as f:
             content = f.read()
             print(content)
@@ -117,36 +119,64 @@ class ParsingRulesWorker(FlowWorker):
         self.agent = Agent(
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
-            model="gpt-4o",
-            output_type=ParserDefinitionData,
+            model="gpt-4.1",
+            tools=[self.check_parsing_rules],
         )
 
     @staticmethod
     def flow_worker_name():
         return "parsing_rules_worker"
 
+    @staticmethod
+    @function_tool
+    async def check_parsing_rules(string_json_parsing_rules: str) -> bool | str:
+        """Check whether the generated parser rules conform to the expected format."""
+        dict_rules = json.loads(string_json_parsing_rules)
+        print(dict_rules)
+        # validate against parser definiton:
+        try:
+            ParserDefinitionData.model_validate(dict_rules)
+        except Exception as e:
+            print("Parsing rules are not valid")
+            print(e)
+            return str(e)
+
+        return True
+
     async def run(
-        self, data_description: DataDescriptionData, file: FileData
+        self,
+        data_description: DataDescriptionData,
+        file: FileData,
     ) -> set[ParserDefinitionData]:
-        with open(file.filename, "r") as f: #TODO Add additional user data
+        with open(file.filename, "r") as f:  # TODO Add additional user data
             content = f.read()
             metrics = data_description.metrics
             dimensions = data_description.dimensions
             print("Metrics:", metrics)
             print("Dimensions:", dimensions)
-            self.agent.instructions = get_parsing_rules_prompt(
-                metrics=metrics, dimensions=dimensions
+
+            self.agent.instructions = get_parsing_rules(
+                data_description.metrics,
+                data_description.dimensions,
+                data_description.begin_month_year,
+                data_description.end_month_year,
+                data_description.title_report,
+                data_description.title_identifiers,
             )
 
+            print("Instructions:", self.agent.instructions)
+
             config = RunConfig(
-                workflow_name="test_app_2", trace_id="trace_parsing_rules"
+                workflow_name="test_parsing_41", trace_id="trace_parsing_41"
             )  # todo
-            
+
             result = await Runner.run(self.agent, content, run_config=config)
             print("Parsing rules generated\n")
             print(result.final_output)
-
-            return {result.final_output}
+            # validate the parsing rules
+            dict_rules = json.loads(result.final_output)
+            parsing_rules = ParserDefinitionData.model_validate(dict_rules)
+            return {parsing_rules}
 
 
 FLOW_WORKERS: set[type[FlowWorker]] = {
