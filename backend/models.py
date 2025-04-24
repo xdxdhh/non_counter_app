@@ -3,7 +3,7 @@ import typing
 from enum import Enum
 import json
 from base import FlowData
-
+import pandas as pd
 class Direction(str, Enum):
     LEFT = "left"
     RIGHT = "right"
@@ -53,7 +53,7 @@ class RoleEnum(str, Enum):
 
 class MetricSource(BaseModel):
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     role: typing.Literal[RoleEnum.METRIC]
 
 class ComposedDate(BaseModel):
@@ -62,7 +62,7 @@ class ComposedDate(BaseModel):
 
 class DateSource(BaseModel):
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     composed: ComposedDate | None = None
     date_pattern: str | None = None
     role: typing.Literal[RoleEnum.DATE]
@@ -77,7 +77,7 @@ class DataHeaders(BaseModel):
 
 class TitleSource(BaseModel):
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     role: typing.Literal[RoleEnum.TITLE]
 
 class TitleIdKind(str, Enum):
@@ -91,18 +91,18 @@ class TitleIdKind(str, Enum):
 class TitleIdSource(BaseModel):
     name: TitleIdKind
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     role: typing.Literal[RoleEnum.TITLE_ID]
 
 class OrganizationSource(BaseModel):
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     role: typing.Literal[RoleEnum.ORGANIZATION]
 
 class DimensionSource(BaseModel):
     name: str
     source: Source
-    extract_params: ExtractParams | None = None
+    extract_params: ExtractParams | None = ExtractParams()
     role: typing.Literal[RoleEnum.DIMENSION]
 
 class NonCounterGeneric(BaseModel): #Generic Area Definition
@@ -114,9 +114,16 @@ class NonCounterGeneric(BaseModel): #Generic Area Definition
     dimensions: typing.List[DimensionSource] = []
     organizations: typing.Optional[OrganizationSource]
 
+class Heuristics(BaseModel):
+    conds: typing.List = []
+    kind: typing.Literal["and"] = "and"
+
+class DataFormat(BaseModel):
+    name: str = "format"
 
 class ParserDefinitionData(FlowData):
     parser_name: str
+    data_format: DataFormat
     platforms: typing.List[str] = []
     metrics_to_skip: typing.List[str] = []
     available_metrics: typing.Optional[typing.List[str]]
@@ -125,6 +132,9 @@ class ParserDefinitionData(FlowData):
     areas: typing.List[NonCounterGeneric]
     metric_aliases: typing.List[typing.Tuple[str, str]] = []
     dimension_aliases: typing.List[typing.Tuple[str, str]] = []
+
+    kind: typing.Literal["non_counter.generic"] = "non_counter.generic"
+    heuristics: Heuristics = Heuristics()
 
     #dimensions_to_skip: typing.Dict[str, typing.List[str]] = {}
 
@@ -190,5 +200,17 @@ class DataDescriptionData(FlowData):
     @staticmethod
     def flow_data_name():
         return 'data_description_data'
+
+class ParsedData(FlowData):
+    columns: list[dict[str,str]]
+    rows: list[dict[str,str]]
+
+    def from_df(self, df: pd.DataFrame):
+        self.columns = [{"field": col, "header": col} for col in df.columns]
+        self.rows = df.to_dict(orient="records")
+
+    @staticmethod
+    def flow_data_name():
+        return 'parsed_data'
     
-FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData}
+FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData}

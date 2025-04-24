@@ -196,6 +196,14 @@
           <div class="py-6">
             <Button label="Back" severity="secondary" @click="activateCallback('2')" />
           </div>
+          <DataTable :value="rows">
+            <Column
+              v-for="col in columns"
+              :key="col.field"
+              :field="col.field"
+              :header="col.header"
+            />
+          </DataTable>
         </StepPanel>
       </StepItem>
     </Stepper>
@@ -214,6 +222,8 @@ import MultiSelect from 'primevue/multiselect'
 import Select from 'primevue/select'
 import ToggleButton from 'primevue/togglebutton'
 import Card from 'primevue/card'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
 
 import Stepper from 'primevue/stepper'
 import StepItem from 'primevue/stepitem'
@@ -240,6 +250,9 @@ const metricsDimensionsUnion = []
 
 const parsingRules = ref('')
 
+const columns = ref([])
+const rows = ref([])
+
 const descriptionData = reactive({
   begin_month_year: '',
   end_month_year: '',
@@ -260,6 +273,10 @@ const generateParsingRules = async (activateCallback) => {
   const newParsingRules = await getState(sessionId.value, 'parser_definition_data')
   parsingRules.value = JSON.stringify(newParsingRules, null, 3)
   parsingRulesState.value = 'done'
+  const parsedData = await getState(sessionId.value, 'parsed_data')
+  columns.value = parsedData.columns
+  rows.value = parsedData.rows
+  console.log('Parsed data:', parsedData)
 }
 
 const onFileSelect = (event) => {

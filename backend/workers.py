@@ -8,11 +8,21 @@ from prompts import (
     get_data_description_prompt,
     get_parsing_rules,
 )
-from models import PlatformData, DataDescriptionData, FileData, ParserDefinitionData
+from models import (
+    PlatformData,
+    DataDescriptionData,
+    FileData,
+    ParserDefinitionData,
+    ParsedData,
+)
 from dotenv import load_dotenv
 import os
 import json
-
+from utils import parse_the_data_out
+from celus_nibbler.definitions import Definition
+from celus_nibbler.parsers.dynamic import gen_parser
+from celus_nibbler import eat
+import pandas as pd
 load_dotenv()
 
 
@@ -120,7 +130,7 @@ class ParsingRulesWorker(FlowWorker):
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
             model="gpt-4.1",
-            tools=[self.check_parsing_rules],
+            tools=[self.check_parsing_rules, self.parse_data],
         )
 
     @staticmethod
@@ -143,11 +153,60 @@ class ParsingRulesWorker(FlowWorker):
 
         return True
 
+    @staticmethod
+    @function_tool
+    async def parse_data(string_json_parsing_rules: str) -> pd.DataFrame | str:
+        """Try to parse the data using the parsing rules."""
+        dict_rules = json.loads(string_json_parsing_rules)
+        parsing_rules = ParserDefinitionData.model_validate(dict_rules)
+        parser_definition = Definition.parse(parsing_rules)
+
+        try:
+            dynamic_parsers = [gen_parser(parser_definition)]
+
+            poops = eat(
+                file_path='uploaded_files/value.csv',
+                platform="val",
+                check_platform=False,
+                parsers=[e.name for e in dynamic_parsers],
+                dynamic_parsers=dynamic_parsers,
+            )
+
+            poops[0].records_with_stats()
+            df = pd.DataFrame(poops[0].records())
+
+            # drop item_ids column
+            df = df.drop(columns=['item_ids'], errors='ignore')
+
+            #dimension data is dict, divide it into columns
+            for col in df.columns:
+                if isinstance(df[col].iloc[0], dict):
+                    # create new columns for each key in the dict
+                    dict_df = pd.json_normalize(df[col])
+                    # rename the columns to include the original column name
+                    dict_df.columns = [f"{col}.{k}" for k in dict_df.columns]
+                    # concatenate the new columns with the original dataframe
+                    df = pd.concat([df, dict_df], axis=1)
+                    # drop the original column
+                    df = df.drop(columns=[col])
+
+            #keep only non None columns
+            df = df.dropna(axis=1, how='all')
+            print(df)
+            return df
+        except Exception as e:
+            print("Parsing rules are not valid - failed to parse the data")
+            print(e)
+            return str(e)
+
+        return True
+
     async def run(
         self,
         data_description: DataDescriptionData,
+        platform: PlatformData,
         file: FileData,
-    ) -> set[ParserDefinitionData]:
+    ) -> set[ParserDefinitionData, ParsedData]:
         with open(file.filename, "r") as f:  # TODO Add additional user data
             content = f.read()
             metrics = data_description.metrics
@@ -162,6 +221,7 @@ class ParsingRulesWorker(FlowWorker):
                 data_description.end_month_year,
                 data_description.title_report,
                 data_description.title_identifiers,
+                platform.platform_name,
             )
 
             print("Instructions:", self.agent.instructions)
@@ -176,7 +236,12 @@ class ParsingRulesWorker(FlowWorker):
             # validate the parsing rules
             dict_rules = json.loads(result.final_output)
             parsing_rules = ParserDefinitionData.model_validate(dict_rules)
-            return {parsing_rules}
+
+            print("Parsing rules validated")
+            df = parse_the_data_out(file, parsing_rules)
+            parsed_data = ParsedData(columns=[], rows=[])
+            parsed_data.from_df(df)
+            return {parsing_rules, parsed_data}
 
 
 FLOW_WORKERS: set[type[FlowWorker]] = {
