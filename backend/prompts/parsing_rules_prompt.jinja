@@ -1,55 +1,28 @@
-from jinja2 import Environment, FileSystemLoader
-
-env = Environment(loader=FileSystemLoader('prompts'))
-parsing_prompt = env.get_template('parsing_rules_prompt.jinja')
-translation_prompt = env.get_template('translation_prompt.jinja')
-data_description_prompt = env.get_template('data_description_prompt.jinja')
-platform_prompt = env.get_template('platform_prompt.jinja')
-
-def get_platform_prompt():
-    return platform_prompt.render()
-
-def get_data_description_prompt():
-    return data_description_prompt.render()
-
-def get_translation_prompt():
-    return translation_prompt.render()
-
-def get_parsing_rules_prompt(metrics : list[str], dimensions: list[str], month_first : str, month_last : str, title_report : bool, title_identifiers : list, platform_name: str):
-    prompt = parsing_prompt.render(
-        metrics=metrics,
-        dimensions=dimensions,
-        month_first=month_first,
-        month_last=month_last,
-        title_report=title_report,
-        title_identifiers=title_identifiers,
-        platform_name=platform_name
-    )
-    return prompt
-
-def get_parsing_rules_old(metrics : list, dimensions :list, month_first, month_last, title_report : bool, title_identifiers : list, platform_name: str):
-    prompt=f"""
-    User will give you text of the CSV he obtained from provider of e-resources usage statistics.
+User will give you text of the CSV he obtained from provider of e-resources usage statistics.
 As the CSVs he obtains from different providers are different, he has written universal python parser,  which can parse the data out. For it to work, he needs you to create the parser rules in the correct format.
 Special instructions from the user - keep them in mind:
-You know from the user that metrics in this file are: {metrics}"""
-    prompt += f""" .That means that you should try to locale cells with these metrics in them. 
-The date should span months from {month_first} to {month_last}."""
-    if len(dimensions) > 0:
-        prompt += f""" The user also told you that the dimensions in this file are: {dimensions}.
-        That means that you should try to locale cells with these dimensions in them."""
-    else:
-        prompt += """ There are no dimensions in this file."""
-    
-    if title_report:
-        prompt += f""" The user also told you that this is a title report, which means you should include information about title and title identifiers.
-        The title identifiers are {title_identifiers} """
-    else:
-        prompt += """ The user also told you that this is not a title report, which means you should not include information about title and title identifiers"""
 
-    prompt += f"""You alse know this data is from platform {platform_name}."""
+You know from the user that metrics in this file are: {{ metrics }}.
+That means that you should try to locale cells with these metrics in them. 
 
-    prompt += """
+The date should span months from {{ month_first }} to {{ month_last }}.
+
+{% if dimensions %}
+
+The user also told you that the dimensions in this file are: {{ dimensions }}.
+That means that you should try to locate cells with these dimensions in them.
+{% else %}
+There are no dimensions in this file.
+{% endif %}
+
+{% if title_report %}
+The user also told you that this is a title report, which means you should include information about title and title identifiers.
+The title identifiers are {{ title_identifiers }}.
+{% else %}
+The user also told you that this is not a title report, which means you should not include information about title and title identifiers.
+{% endif %}
+
+You also know this data is from platform {{ platform_name }}.
 
 Comment all your thinking out loud.
 First analyze headers, distinguish which sources belong to headers and which ones do not.
@@ -311,6 +284,3 @@ class NonCounterGeneric(BaseModel): #Generic Area Definition
     dimensions: typing.List[DimensionSource] = []
     organizations: typing.Optional[OrganizationSource]
     
-
-"""
-    return prompt

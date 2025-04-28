@@ -1,12 +1,13 @@
 from base import FlowWorker
 from pydantic import BaseModel
 import requests
-from agents import RunConfig, Runner, Agent, function_tool
-from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
+from agents import RunConfig, Runner, Agent, function_tool, RunContextWrapper
 import typing
 from prompts import (
     get_data_description_prompt,
-    get_parsing_rules,
+    get_parsing_rules_prompt,
+    get_translation_prompt,
+    get_platform_prompt,
 )
 from models import (
     PlatformData,
@@ -14,17 +15,22 @@ from models import (
     FileData,
     ParserDefinitionData,
     ParsedData,
+    TranslationData,
 )
+from dataclasses import dataclass
 from dotenv import load_dotenv
 import os
 import json
-from utils import parse_the_data_out
 from celus_nibbler.definitions import Definition
 from celus_nibbler.parsers.dynamic import gen_parser
 from celus_nibbler import eat
 import pandas as pd
+import logging
+
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Platform(BaseModel):
     short_name: str
@@ -41,71 +47,73 @@ class PlatformAgentWorker(FlowWorker):
         self.agent = Agent(
             name="Platform Agent",
             handoff_description="Specialist agent for questions about platforms.",
-            instructions=f"{RECOMMENDED_PROMPT_PREFIX}"
-            "You provide assistance with questions about platforms. User will tell you in which platform is he interested and you goal is to tell him if the platform is available."
-            "You can use fetch_all_platforms function that will tell you all the available platforms and also their short names."
-            "If the platform is available, your goal is also to tell the user which parsers are capable of processing this platform."
-            "To get all the parsers, you can use fetch_all_parsers function. If the platform is not listed between the platforms, it also wont have any parser.",
+            instructions=get_platform_prompt(),
             model="gpt-4o-mini",
             tools=[self.fetch_all_platforms, self.fetch_all_parsers],
             output_type=PlatformData,
         )
 
     @function_tool
-    async def fetch_all_platforms():
+    async def fetch_all_platforms() -> str:
+        """Fetch all available platforms from Brain API.
+            Returns them in format platform_name(short_name)."""
+        
         url = "https://brain.celus.net/knowledgebase/platforms/"
-        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
-        print("Fetching all platforms")
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        platforms = [Platform.model_validate(p) for p in response.json()]
-        return ", ".join(f"{p.name}({p.short_name})" for p in platforms)
+        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"} #expects BRAIN_TOKEN in env
+        logger.info("Fetching all platforms")
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            platforms = [Platform.model_validate(p) for p in response.json()]
+            return ",".join(f"{p.name}({p.short_name})" for p in platforms)
+        except requests.HTTPError as http_err:
+            logger.error(f"HTTP error occurred: {http_err}")
+            raise
+        except Exception as err:
+            logger.error(f"An error occurred: {err}")
+            raise
 
     @function_tool
     async def fetch_all_parsers() -> str:
         """Fetch all available parsers from Brain API.
-        Returns them in format parser_name(platforms)c
+        Returns them in format parser_name(platforms).
         """
-        print("Fetching all parsers")
         url = "https://brain.celus.net/knowledgebase/parsers/"
         headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        parsers = [ParserDefinitionAPI.model_validate(p) for p in response.json()]
-        # create list of parsers
-
-        return ", ".join(f"Parser {p.parser_name}({p.platforms})" for p in parsers)
+        logger.info("Fetching all parsers")
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            parsers = [ParserDefinitionAPI.model_validate(p) for p in response.json()]
+            return ",".join(f"Parser {p.parser_name}({p.platforms})" for p in parsers)
+        except requests.HTTPError as http_err:
+            logger.error(f"HTTP error occurred: {http_err}")
+            raise
+        except Exception as err:
+            logger.error(f"An error occurred: {err}")
+            raise
 
     @staticmethod
     def flow_worker_name():
         return "platform_worker"
 
     async def run(self, platform: PlatformData) -> set[PlatformData]:
-        print("Platform Agent: Checking platform", platform.platform_name)
+        logger.info(f"Platform Agent: Checking platform {platform.platform_name}")
         prompt = f"I am interested in {platform.platform_name} platform."
-        config = RunConfig(workflow_name="test_app_1", trace_id="trace_app_1")  # todo
-        result = await Runner.run(self.agent, prompt, run_config=config)
-
-        # create the PlayerAgentOutput object
-        print("Result of platform agent:")
-        print(result.final_output)
+        result = await Runner.run(self.agent, prompt)
+        # create the PlatformData object
+        logger.info(f"Platform Agent result: {result.final_output}")
         output = PlatformData.model_validate(result.final_output)
-        print(output)
         return {output}
 
 
 class DataDescriptionWorker(FlowWorker):
     def __init__(self):
-        # TODO give metrics and dimensions access
-
         self.agent = Agent(
             name="Data Description Agent",
             handoff_description="Specialist agent for describing data.",
             instructions=get_data_description_prompt(),
             model="gpt-4o",
-            # tools=[self.fetch_all_platforms, self.fetch_all_parsers], TODO
             output_type=DataDescriptionData,
         )
 
@@ -115,87 +123,125 @@ class DataDescriptionWorker(FlowWorker):
 
     async def run(self, file: FileData) -> set[DataDescriptionData]:
         with open(file.filename, "r") as f:
+            logger.info("Data Description worker: using file %s", file.filename)
             content = f.read()
-            print(content)
-            config = RunConfig(
-                workflow_name="test_app_1", trace_id="trace_app_description"
-            )  # todo
-            result = await Runner.run(self.agent, content, run_config=config)
+            result = await Runner.run(self.agent, content)
+            logger.info("Data Description Agent result:")
+            logger.info(result.final_output)
             return {result.final_output}
 
 
-class ParsingRulesWorker(FlowWorker):
+class TranslationWorker(FlowWorker):
     def __init__(self):
         self.agent = Agent(
+            name="Translation Agent",
+            handoff_description="Agent for metric and dimension translations.",
+            instructions=get_translation_prompt(),
+            model="gpt-4o-mini",
+            output_type=TranslationData,
+        )
+
+    @staticmethod
+    def flow_worker_name():
+        return "translation_worker"
+
+    async def run(self, data_description: DataDescriptionData) -> set[TranslationData]:
+        metrics = data_description.metrics
+        dimensions = data_description.dimensions
+        logger.info("Translation worker: metrics: %s", metrics)
+        logger.info("Translation worker: dimensions: %s", dimensions)
+        input = f"""Metrics: {metrics},Dimensions: {dimensions}"""
+        result = await Runner.run(self.agent, input)
+        logger.info("Translation Agent result:")
+        logger.info(result.final_output)
+        return {result.final_output}
+
+
+class ParsingRulesWorker(FlowWorker):
+    @dataclass
+    class Context:
+        # necessary for sharing the information to the function tools, which cannot have self argument
+        parser_definition: ParserDefinitionData | None = None
+        parsed_data: ParsedData | None = None
+        filename: str | None = None
+
+    def __init__(self):
+        self.agent = Agent[self.Context](
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
             model="gpt-4.1",
-            tools=[self.check_parsing_rules, self.parse_data],
+            tools=[self.check_parsing_rules],
         )
+        self.context = self.Context()
 
     @staticmethod
     def flow_worker_name():
         return "parsing_rules_worker"
 
     @staticmethod
+    def parse_data(string_json_parsing_rules: str, filename: str) -> pd.DataFrame | str:
+        """Try to parse the data using the parsing rules."""
+        print("Parsing the data into table")
+        dict_rules = json.loads(string_json_parsing_rules)
+        parser_definition = Definition.parse(dict_rules)
+
+        dynamic_parsers = [gen_parser(parser_definition)]
+
+        print(f"filename: {filename}")
+        poops = eat(
+            file_path=filename,
+            platform="val",
+            check_platform=False,
+            parsers=[e.name for e in dynamic_parsers],
+            dynamic_parsers=dynamic_parsers,
+        )
+
+        poops[0].records_with_stats()
+        df = pd.DataFrame(poops[0].records())
+
+        # drop item_ids column
+        df = df.drop(columns=["item_ids"], errors="ignore")
+
+        # dimension data is dict, divide it into columns
+        for col in df.columns:
+            if isinstance(df[col].iloc[0], dict):
+                # create new columns for each key in the dict
+                dict_df = pd.json_normalize(df[col])
+                # rename the columns to include the original column name
+                dict_df.columns = [f"{col}.{k}" for k in dict_df.columns]
+                # concatenate the new columns with the original dataframe
+                df = pd.concat([df, dict_df], axis=1)
+                # drop the original column
+                df = df.drop(columns=[col])
+
+        # keep only non None columns
+        df = df.dropna(axis=1, how="all")
+        print("finished parsing the data")
+        print(df)
+        return df
+
+    @staticmethod
     @function_tool
-    async def check_parsing_rules(string_json_parsing_rules: str) -> bool | str:
+    def check_parsing_rules(
+        wrapper: RunContextWrapper[Context], string_json_parsing_rules: str
+    ) -> bool | str:
         """Check whether the generated parser rules conform to the expected format."""
         dict_rules = json.loads(string_json_parsing_rules)
         print(dict_rules)
         # validate against parser definiton:
         try:
             ParserDefinitionData.model_validate(dict_rules)
+            df = ParsingRulesWorker.parse_data(
+                string_json_parsing_rules, filename=wrapper.context.filename
+            )
+            parsed_data = ParsedData(columns=[], rows=[])
+            parsed_data.from_df(df)
+            wrapper.context.parsed_data = parsed_data
+            wrapper.context.parser_definition = ParserDefinitionData.model_validate(
+                dict_rules
+            )
         except Exception as e:
             print("Parsing rules are not valid")
-            print(e)
-            return str(e)
-
-        return True
-
-    @staticmethod
-    @function_tool
-    async def parse_data(string_json_parsing_rules: str) -> pd.DataFrame | str:
-        """Try to parse the data using the parsing rules."""
-        dict_rules = json.loads(string_json_parsing_rules)
-        parsing_rules = ParserDefinitionData.model_validate(dict_rules)
-        parser_definition = Definition.parse(parsing_rules)
-
-        try:
-            dynamic_parsers = [gen_parser(parser_definition)]
-
-            poops = eat(
-                file_path='uploaded_files/value.csv',
-                platform="val",
-                check_platform=False,
-                parsers=[e.name for e in dynamic_parsers],
-                dynamic_parsers=dynamic_parsers,
-            )
-
-            poops[0].records_with_stats()
-            df = pd.DataFrame(poops[0].records())
-
-            # drop item_ids column
-            df = df.drop(columns=['item_ids'], errors='ignore')
-
-            #dimension data is dict, divide it into columns
-            for col in df.columns:
-                if isinstance(df[col].iloc[0], dict):
-                    # create new columns for each key in the dict
-                    dict_df = pd.json_normalize(df[col])
-                    # rename the columns to include the original column name
-                    dict_df.columns = [f"{col}.{k}" for k in dict_df.columns]
-                    # concatenate the new columns with the original dataframe
-                    df = pd.concat([df, dict_df], axis=1)
-                    # drop the original column
-                    df = df.drop(columns=[col])
-
-            #keep only non None columns
-            df = df.dropna(axis=1, how='all')
-            print(df)
-            return df
-        except Exception as e:
-            print("Parsing rules are not valid - failed to parse the data")
             print(e)
             return str(e)
 
@@ -207,45 +253,36 @@ class ParsingRulesWorker(FlowWorker):
         platform: PlatformData,
         file: FileData,
     ) -> set[ParserDefinitionData, ParsedData]:
+        metrics = data_description.metrics
+        dimensions = data_description.dimensions
+        print("Metrics:", metrics)
+        print("Dimensions:", dimensions)
+        self.agent.instructions = get_parsing_rules_prompt(
+            data_description.metrics,
+            data_description.dimensions,
+            data_description.begin_month_year,
+            data_description.end_month_year,
+            data_description.title_report,
+            data_description.title_identifiers,
+            platform.platform_name,
+        )
+        print("Instructions:", self.agent.instructions)
         with open(file.filename, "r") as f:  # TODO Add additional user data
+            self.context.filename = file.filename
             content = f.read()
-            metrics = data_description.metrics
-            dimensions = data_description.dimensions
-            print("Metrics:", metrics)
-            print("Dimensions:", dimensions)
-
-            self.agent.instructions = get_parsing_rules(
-                data_description.metrics,
-                data_description.dimensions,
-                data_description.begin_month_year,
-                data_description.end_month_year,
-                data_description.title_report,
-                data_description.title_identifiers,
-                platform.platform_name,
-            )
-
-            print("Instructions:", self.agent.instructions)
-
             config = RunConfig(
-                workflow_name="test_parsing_41", trace_id="trace_parsing_41"
+                workflow_name="test_6outputs", trace_id="trace_5outputa"
             )  # todo
 
-            result = await Runner.run(self.agent, content, run_config=config)
-            print("Parsing rules generated\n")
-            print(result.final_output)
-            # validate the parsing rules
-            dict_rules = json.loads(result.final_output)
-            parsing_rules = ParserDefinitionData.model_validate(dict_rules)
-
-            print("Parsing rules validated")
-            df = parse_the_data_out(file, parsing_rules)
-            parsed_data = ParsedData(columns=[], rows=[])
-            parsed_data.from_df(df)
-            return {parsing_rules, parsed_data}
+            await Runner.run(
+                self.agent, content, run_config=config, context=self.context
+            )
+            return {self.context.parser_definition, self.context.parsed_data}
 
 
 FLOW_WORKERS: set[type[FlowWorker]] = {
     PlatformAgentWorker,
     DataDescriptionWorker,
     ParsingRulesWorker,
+    TranslationWorker
 }

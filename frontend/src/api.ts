@@ -5,7 +5,7 @@ const axios_client = axios.create({
   // timeout: 1000,
 })
 
-const getState = async (sessionId: Number, stateName: String) => {
+const getState = async (sessionId: number, stateName: string) => {
   console.log('Getting state:', stateName)
   try {
     const response = await axios_client.get(`state/${sessionId}/${stateName}`)
@@ -13,10 +13,11 @@ const getState = async (sessionId: Number, stateName: String) => {
     return response.data
   } catch (error) {
     console.error('Error setting state:', error)
+    return null
   }
 }
 
-const setState = async (sessionId: Number, stateName: Number, valuesDict: JSON) => {
+const setState = async (sessionId: number, stateName: number, valuesDict: JSON) => {
   console.log('Setting state:', stateName)
   try {
     const response = await axios_client.post(`state/${sessionId}/${stateName}`, valuesDict)
@@ -26,7 +27,7 @@ const setState = async (sessionId: Number, stateName: Number, valuesDict: JSON) 
   }
 }
 
-const callWorker = async (sessionId: Number, workerName: String) => {
+const callWorker = async (sessionId: number, workerName: string) => {
   console.log('Calling worker')
   try {
     const response = await axios_client.get(`worker/${sessionId}/${workerName}`)

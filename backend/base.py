@@ -67,10 +67,3 @@ class Runtime:
             self.state[r.flow_data_name()] = r
 
         print(f"Run finished, states: {self.state}")
-
-
-#runtime = Runtime()
-#runtime.set_state(TestDataA(4))
-#runtime.set_state(TestDataB())
-#asyncio.run(runtime.run(TestWorker()))
-#print(runtime.state)

@@ -113,6 +113,7 @@ class NonCounterGeneric(BaseModel): #Generic Area Definition
     title_ids: typing.List[TitleIdSource] = []
     dimensions: typing.List[DimensionSource] = []
     organizations: typing.Optional[OrganizationSource]
+    kind: typing.Literal["non_counter.generic"] = "non_counter.generic"
 
 class Heuristics(BaseModel):
     conds: typing.List = []
@@ -184,6 +185,17 @@ class FileData(FlowData):
     def flow_data_name():
         return 'file_data'
     
+class TranslationData(FlowData):
+    """
+    Includes metrics and dimensions translations.
+    """
+    metrics_translations: typing.List[str]
+    dimensions_translations: typing.List[str]
+
+    @staticmethod
+    def flow_data_name():
+        return 'translation_data'
+    
 class DataDescriptionData(FlowData):
     """
     Includes data description
@@ -213,4 +225,6 @@ class ParsedData(FlowData):
     def flow_data_name():
         return 'parsed_data'
     
-FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData}
+FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData, TranslationData}
+
+#print(ParserDefinitionData.model_json_schema())
