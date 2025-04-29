@@ -1,11 +1,17 @@
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar, cast
-import asyncio
+import logging
 from pydantic import BaseModel
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class FlowData(ABC, BaseModel):
-
+    """
+    Base abstract class for all FlowData types.
+    Each FlowData type should implement the flow_data_name method to return a unique name for the data type.
+    Implements comparison and hashing based on the flow_data_name.
+    """
     @staticmethod
     @abstractmethod
     def flow_data_name():
@@ -20,7 +26,12 @@ class FlowData(ABC, BaseModel):
 
 
 class FlowWorker(ABC):
-    
+    """
+    Base abstract class for all FlowWorker types.
+    Each FlowWorker type should implement the flow_worker_name method to return a unique name for the worker.
+    Implements input_data and output_data properties to get the types of input and output data for given worker.
+    Each FlowWorker type should implement the run method to perform the actual work.
+    """
     @staticmethod
     @abstractmethod
     def flow_worker_name():
@@ -41,23 +52,30 @@ class FlowWorker(ABC):
 T = TypeVar("T", bound=FlowData)
 
 class Runtime:
+    """
+    Runtime class to manage the state of the data processing.
+    It holds the state of all FlowData types and provides methods to set and get the state.
+    It also provides a method to run a FlowWorker, which processes the input data and updates the state.
+    The run method takes a FlowWorker instance and runs it with the current state as input.
+    The result of the run is used to update current states.
+    """
     def __init__(self) -> None:
         self.state: dict[str, FlowData] = {}
-        print("Runtime initialized.")
+        logging.info("Runtime initialized.")
 
     def set_state(self, data: FlowData):
-        print(f"Setting state {data.flow_data_name()}")
         self.state[data.flow_data_name()] = data
-
-        print('current states:', self.state)
+        logging.info(f"State set: {data.flow_data_name()}")
+        logging.info(f"Current states: {self.state}")
 
     def get_state(self, name: str, _: type[T]) -> T:
         return cast(T, self.state[name])
 
     async def run(self, worker: FlowWorker):
-        print(f"Running {worker.flow_worker_name()}")
+        logging.info(f"Running {worker.flow_worker_name()}")
+        logging.info(f"This worker needs {worker.input_data} input data.")
         args = []
-        print(f"This worker needs {worker.input_data} input data.") 
+
         for input in worker.input_data:
             args.append({t.__class__: t for t in self.state.values()}[input])
 
@@ -66,4 +84,4 @@ class Runtime:
         for r in result:
             self.state[r.flow_data_name()] = r
 
-        print(f"Run finished, states: {self.state}")
+        logging.info(f"Run finished, states: {self.state}")

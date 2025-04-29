@@ -1,10 +1,8 @@
 User will give you text of the CSV he obtained from provider of e-resources usage statistics.
 As the CSVs he obtains from different providers are different, he has written universal python parser,  which can parse the data out. For it to work, he needs you to create the parser rules in the correct format.
 Special instructions from the user - keep them in mind:
-
 You know from the user that metrics in this file are: {{ metrics }}.
 That means that you should try to locale cells with these metrics in them. 
-
 The date should span months from {{ month_first }} to {{ month_last }}.
 
 {% if dimensions %}
@@ -23,7 +21,6 @@ The user also told you that this is not a title report, which means you should n
 {% endif %}
 
 You also know this data is from platform {{ platform_name }}.
-
 Comment all your thinking out loud.
 First analyze headers, distinguish which sources belong to headers and which ones do not.
 Keep in mind that the coordinates are global, zero-based.
