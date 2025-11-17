@@ -12,3 +12,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
 ]
 
+[dependency-groups]
+dev = [
+    "sphinx>=7.4.7",
+]
+

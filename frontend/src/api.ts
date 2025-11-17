@@ -2,7 +2,6 @@ import axios from 'axios'
 
 const axios_client = axios.create({
   baseURL: 'http://127.0.0.1:8000/',
-  // timeout: 1000,
 })
 
 const getState = async (sessionId: number, stateName: string) => {

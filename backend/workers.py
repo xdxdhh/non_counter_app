@@ -1,7 +1,7 @@
 from base import FlowWorker
 from pydantic import BaseModel
 import requests
-from agents import RunConfig, Runner, Agent, function_tool, RunContextWrapper
+from agents import Runner, Agent, function_tool, RunContextWrapper
 import typing
 from prompts import (
     get_data_description_prompt,
@@ -32,6 +32,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class Platform(BaseModel):
     short_name: str
     name: str
@@ -56,10 +57,12 @@ class PlatformAgentWorker(FlowWorker):
     @function_tool
     async def fetch_all_platforms() -> str:
         """Fetch all available platforms from Brain API.
-            Returns them in format platform_name(short_name)."""
-        
+        Returns them in format platform_name(short_name)."""
+
         url = "https://brain.celus.net/knowledgebase/platforms/"
-        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"} #expects BRAIN_TOKEN in env
+        headers = {
+            "Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"
+        }  # expects BRAIN_TOKEN in env
         logger.info("Fetching all platforms")
         try:
             response = requests.get(url, headers=headers)
@@ -169,7 +172,7 @@ class ParsingRulesWorker(FlowWorker):
         self.agent = Agent[self.Context](
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
-            model="gpt-4.1",
+            model="gpt-4o",
             tools=[self.check_parsing_rules],
         )
         self.context = self.Context()
@@ -181,13 +184,11 @@ class ParsingRulesWorker(FlowWorker):
     @staticmethod
     def parse_data(string_json_parsing_rules: str, filename: str) -> pd.DataFrame | str:
         """Try to parse the data using the parsing rules."""
-        print("Parsing the data into table")
         dict_rules = json.loads(string_json_parsing_rules)
         parser_definition = Definition.parse(dict_rules)
 
         dynamic_parsers = [gen_parser(parser_definition)]
 
-        print(f"filename: {filename}")
         poops = eat(
             file_path=filename,
             platform="val",
@@ -216,8 +217,11 @@ class ParsingRulesWorker(FlowWorker):
 
         # keep only non None columns
         df = df.dropna(axis=1, how="all")
-        print("finished parsing the data")
-        print(df)
+        # save the csv into uploaded_files folder
+        df.to_csv(
+            os.path.join("uploaded_files", f"{filename.split('/')[-1]}_parsed.csv"),
+            index=False,
+        )
         return df
 
     @staticmethod
@@ -227,7 +231,6 @@ class ParsingRulesWorker(FlowWorker):
     ) -> bool | str:
         """Check whether the generated parser rules conform to the expected format."""
         dict_rules = json.loads(string_json_parsing_rules)
-        print(dict_rules)
         # validate against parser definiton:
         try:
             ParserDefinitionData.model_validate(dict_rules)
@@ -241,8 +244,7 @@ class ParsingRulesWorker(FlowWorker):
                 dict_rules
             )
         except Exception as e:
-            print("Parsing rules are not valid")
-            print(e)
+            logger.exception(e)
             return str(e)
 
         return True
@@ -253,10 +255,6 @@ class ParsingRulesWorker(FlowWorker):
         platform: PlatformData,
         file: FileData,
     ) -> set[ParserDefinitionData, ParsedData]:
-        metrics = data_description.metrics
-        dimensions = data_description.dimensions
-        print("Metrics:", metrics)
-        print("Dimensions:", dimensions)
         self.agent.instructions = get_parsing_rules_prompt(
             data_description.metrics,
             data_description.dimensions,
@@ -266,17 +264,10 @@ class ParsingRulesWorker(FlowWorker):
             data_description.title_identifiers,
             platform.platform_name,
         )
-        print("Instructions:", self.agent.instructions)
-        with open(file.filename, "r") as f:  # TODO Add additional user data
+        with open(file.filename, "r") as f:
             self.context.filename = file.filename
             content = f.read()
-            config = RunConfig(
-                workflow_name="test_6outputs", trace_id="trace_5outputa"
-            )  # todo
-
-            await Runner.run(
-                self.agent, content, run_config=config, context=self.context
-            )
+            await Runner.run(self.agent, content, context=self.context)
             return {self.context.parser_definition, self.context.parsed_data}
 
 
@@ -284,5 +275,5 @@ FLOW_WORKERS: set[type[FlowWorker]] = {
     PlatformAgentWorker,
     DataDescriptionWorker,
     ParsingRulesWorker,
-    TranslationWorker
+    TranslationWorker,
 }

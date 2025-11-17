@@ -341,7 +341,6 @@ const processPlatform = async (activateCallback) => {
 }
 
 const sendFile = async () => {
-  console.log('sending file')
   if (!file.value) {
     console.error('No file selected')
     return
@@ -356,7 +355,6 @@ const sendFile = async () => {
         'Content-Type': 'multipart/form-data',
       },
     })
-    console.log('File upload response:', response.data)
   } catch (error) {
     console.error('Error uploading file:', error)
   }
@@ -364,16 +362,12 @@ const sendFile = async () => {
 
 const generateDescription = async () => {
   dataDescriptionState.value = 'loading'
-  console.log('Generating description for platform:', platform.value)
   await callWorker(sessionId.value, 'data_description_worker')
-
   const newDataDescription = await getState(sessionId.value, 'data_description_data')
-  console.log('New data description:', newDataDescription)
   Object.assign(descriptionData, newDataDescription)
   metricsDimensionsUnion.value = [
     ...new Set([...descriptionData.metrics, ...descriptionData.dimensions]),
   ]
-  console.log('Metrics and dimensions union:', metricsDimensionsUnion.value)
 
   dataDescriptionState.value = 'done'
 }
@@ -390,7 +384,6 @@ onMounted(async () => {
   try {
     const response = await axios.post('http://127.0.0.1:8000/start_session')
     sessionId.value = response.data.session_id
-    //router.push(`/${sessionId}`) // Navigate to new session URL
   } catch (error) {
     console.error('Failed to start session:', error)
   }
