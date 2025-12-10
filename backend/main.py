@@ -5,7 +5,7 @@ import logging
 
 from base import Runtime
 from workers import FLOW_WORKERS
-from models import FLOW_DATA, FileData
+from models import FLOW_DATA, FileData, FileFormat
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ async def upload_file(session_id: int, file: UploadFile = File(...)) -> dict:
         os.makedirs("uploaded_files", exist_ok=True) # create directory if it doesn't exist
         with open(file_location, "wb") as buffer:
             buffer.write(await file.read())
-        runtime.set_state(FileData(filename=file_location))
+        runtime.set_state(FileData(path=file_location, format=FileFormat.from_file_extension(file.filename)))
         return {"filename": file.filename, "message": "File uploaded successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

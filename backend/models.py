@@ -3,6 +3,10 @@ import typing
 from enum import Enum
 from base import FlowData
 import pandas as pd
+from dataclasses import field
+import openpyxl
+import os
+from typing import Literal
 
 class Coord(BaseModel):
     """
@@ -36,7 +40,13 @@ class Value(BaseModel):
     """
     value: typing.Any
 
-Source = typing.Union[Coord, CoordRange, Value]
+class SheetAttr(BaseModel):
+    """
+    The source used to get the attributes of the sheet.
+    """
+    sheet_attr: Literal["name", "sheet_idx"]
+
+Source = typing.Union[Coord, CoordRange, Value, SheetAttr]
 
 class TableException(BaseModel):
     class Action(str, Enum):
@@ -59,6 +69,7 @@ class ExtractParams(BaseModel):
     """
     regex: typing.Pattern | None = None
     default: typing.Any | None = None
+    blank_values: typing.Tuple[typing.Any, ...] = field(default_factory=lambda: (None, ""))
     last_value_as_default: bool = False
     on_validation_error: TableException.Action = TableException.Action.FAIL
 
@@ -107,6 +118,10 @@ class DateSource(BaseModel):
     date_pattern: str | None = None
     role: typing.Literal[RoleEnum.DATE]
 
+class DataCellsOptions(BaseModel):
+    use_header_year: bool = True
+    use_header_month: bool = True
+
 class DataHeaders(BaseModel):
     """
     Location of the headers in the data, data cells and data direction.
@@ -115,6 +130,8 @@ class DataHeaders(BaseModel):
     roles: typing.List[typing.Union[MetricSource, DateSource]]
     data_cells: CoordRange
     data_direction: Direction
+    data_cells_options: DataCellsOptions | None = None
+    data_extract_params: ExtractParams | None = None
 
 class TitleSource(BaseModel):
     """
@@ -251,16 +268,92 @@ class UserInfoData(FlowData):
     def flow_data_name():
         return 'user_info_data'
 
+
+class FileFormat(str, Enum):
+    """
+    Enumeration for the format of the file.
+    """
+    CSV = "csv"
+    XLSX = "xlsx"
+    XLS = "xls"
+
+    @staticmethod
+    def from_file_extension(filename: str) -> 'FileFormat':
+        """
+        Get the FileFormat from the file extension.
+        """
+        if filename.endswith('.csv'):
+            return FileFormat.CSV
+        elif filename.endswith('.xlsx'):
+            return FileFormat.XLSX
+        elif filename.endswith('.xls'):
+            return FileFormat.XLS
+        else:
+            raise ValueError(f"Unsupported file extension: {filename}")
+
+
+class Sheet(BaseModel):
+    name: str
+    contents: str
+
+    def to_llm_format(self) -> str:
+        return f"Sheet name: {self.name}\nSheet Contents (data starts on the next row):\n {self.contents}"
+
 class FileData(FlowData):
     """
     FlowData for storing file information.
     This includes the filename of the file to be processed, including its path.
     """
-    filename: str
+
+    path: str
+    format: FileFormat
+    file_name: str = ""
+    sheets: list[Sheet] = []
 
     @staticmethod
     def flow_data_name():
         return 'file_data'
+
+    def model_post_init(self, __context: typing.Any) -> None:
+        self.prepare_file()
+
+    def prepare_file(self) -> None:
+        self.file_name = os.path.basename(self.path)
+        print(f"Preparing file {self.file_name} with format {self.format}")
+        # for csv, read it by rows, fill empty rows, add file name as misc data to the prompt
+        # for excel, for each sheet, read it by rows and create csvs, fill empty rows, add file name and sheet name
+        if self.format == FileFormat.CSV:
+            with open(self.path, 'r') as file:
+                content = file.read()
+                processed_content = ''
+                for line in content.split('\n'):
+                    if not line.strip():
+                        processed_content += "empty-row\n"
+                    else:
+                        processed_content += line + '\n'
+                self.sheets.append(Sheet(name=self.file_name, contents=processed_content))
+
+        if self.format == FileFormat.XLSX:
+            workbook = openpyxl.load_workbook(self.path, read_only=True, data_only=True, keep_links=False)
+            for idx, sheet in enumerate(workbook.worksheets):
+                # For some reason in it necessary to reset dimension for some files
+                # which display that only a single cell is present in the data
+                if sheet.calculate_dimension(force=True) == "A1:A1":
+                    sheet.reset_dimensions()
+
+                sheet_name = sheet.title
+                sheet_csv = ''
+                for row in sheet.rows:
+                    sheet_csv += ','.join([str(cell.value) if cell.value is not None else "" for cell in row]) + '\n'
+                self.sheets.append(Sheet(name=sheet_name, contents=sheet_csv))
+
+        print(f"Sheets: {self.sheets}")
+
+    def to_llm_format(self) -> str:
+        result = ""
+        for sheet in self.sheets:
+            result += sheet.to_llm_format() + '\n\n'
+        return result
     
 class TranslationData(FlowData):
     """

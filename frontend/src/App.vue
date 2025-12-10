@@ -5,41 +5,61 @@
       <StepItem value="1">
         <Step>Input Information</Step>
         <StepPanel v-slot="{ activateCallback }">
-          <Card style="width: 40rem; overflow: hidden">
+          <Card style="width: 60rem; overflow: hidden">
             <template #title>Input Information</template>
             <template #subtitle
-              >Please fill in the information from the customer - platform name, the received file
-              and any comments he provided.</template
+              >Fill in the information from the customer - platform name, the received file
+              and any comments you want to provide.</template
             >
             <template #content>
-              <div style="padding-bottom: 10px">
-                <FloatLabel variant="on">
-                  <InputText id="on_label" v-model="platform" style="width: 300px" />
-                  <label for="on_label">Platform Name</label>
-                </FloatLabel>
-              </div>
-              <div style="padding-bottom: 10px">
-                <FloatLabel variant="on">
-                  <Textarea
-                    id="over_label"
-                    v-model="userComment"
-                    rows="5"
-                    cols="30"
-                    style="resize: none"
+              <div class="input-card-content">
+                <div class="input-card-left">
+                  <div style="padding-bottom: 10px">
+                    <FloatLabel variant="on">
+                      <InputText id="on_label" v-model="platform" style="width: 300px" />
+                      <label for="on_label">Platform Name</label>
+                    </FloatLabel>
+                  </div>
+                  <div style="padding-bottom: 10px">
+                    <FloatLabel variant="on">
+                      <Textarea
+                        id="over_label"
+                        v-model="userComment"
+                        rows="5"
+                        cols="30"
+                        style="resize: none"
+                      />
+                      <label for="on_label">User Comments</label>
+                    </FloatLabel>
+                  </div>
+                  <FileUpload
+                    ref="fileupload"
+                    mode="basic"
+                    name="file"
+                    :maxFileSize="1000000"
+                    @select="onFileSelect"
+                    chooseLabel="CSV/Excel File"
+                    accept="text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    style="justify-content: left; display: block"
                   />
-                  <label for="on_label">User Comments</label>
-                </FloatLabel>
+                </div>
+
+                <div class="input-card-divider" />
+
+                <div class="input-card-right">
+                  <div style="font-weight: 600; padding-bottom: 10px">From GitLab</div>
+                  <div style="padding-bottom: 10px">
+                    <FloatLabel variant="on">
+                      <InputText id="gitlab_issue" v-model="gitlabIssue" style="width: 200px" />
+                      <label for="gitlab_issue">Issue number</label>
+                    </FloatLabel>
+                  </div>
+                  <small class="helper-text">
+                    Paste the GitLab issue number (without #) to autofill the information from this issue.
+                  </small>
+                  <Button label="Fill from issue"></Button>
+                </div>
               </div>
-              <FileUpload
-                ref="fileupload"
-                mode="basic"
-                name="file"
-                :maxFileSize="1000000"
-                @select="onFileSelect"
-                chooseLabel="CSV File"
-                accept="text/csv"
-                style="justify-content: left; display: block"
-              />
             </template>
             <template #footer>
               <div style="padding-top: 30px">
@@ -258,6 +278,7 @@ const parsingRulesState = ref('') //'', 'loading', 'done'
 const platform = ref('') //user input - name of the platform
 const userComment = ref('') //user input - any comment
 const file = ref(null)
+const gitlabIssue = ref('')
 
 const sessionId = ref('')
 
@@ -419,5 +440,27 @@ onMounted(async () => {
 .p-multiselect {
   min-width: 17rem;
   max-width: 400px;
+}
+
+.input-card-content {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.input-card-left,
+.input-card-right {
+  flex: 1;
+}
+
+.input-card-divider {
+  width: 1px;
+  align-self: stretch;
+  background-color: #e0e0e0;
+}
+
+.helper-text {
+  color: #6b7280;
+  font-size: 0.8rem;
 }
 </style>

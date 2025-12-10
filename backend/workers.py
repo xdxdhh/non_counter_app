@@ -1,7 +1,7 @@
 from base import FlowWorker
 from pydantic import BaseModel
 import requests
-from agents import Runner, Agent, function_tool, RunContextWrapper
+from agents import Runner, Agent, function_tool, RunContextWrapper, ModelSettings
 import typing
 from prompts import (
     get_data_description_prompt,
@@ -16,6 +16,7 @@ from models import (
     ParserDefinitionData,
     ParsedData,
     TranslationData,
+    UserInfoData,
 )
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -31,7 +32,6 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 class Platform(BaseModel):
     short_name: str
@@ -124,14 +124,33 @@ class DataDescriptionWorker(FlowWorker):
     def flow_worker_name():
         return "data_description_worker"
 
-    async def run(self, file: FileData) -> set[DataDescriptionData]:
-        with open(file.filename, "r") as f:
-            logger.info("Data Description worker: using file %s", file.filename)
-            content = f.read()
-            result = await Runner.run(self.agent, content)
-            logger.info("Data Description Agent result:")
-            logger.info(result.final_output)
-            return {result.final_output}
+    async def run(self, file: FileData, user_info: UserInfoData) -> set[DataDescriptionData]:
+        """
+        Generate data description based on the uploaded file and optional user comment.
+
+        The user comment (if provided) is prepended to the file contents so the agent
+        can take it into account when describing the data.
+        """
+        logger.info("Data Description worker: using file %s", file.file_name)
+
+        # Base content from the prepared file (potentially multiple sheets)
+        content = file.to_llm_format()
+
+        # If user provided a comment, prepend it to the content sent to the agent
+        if user_info.user_comment:
+            content = (
+                "User comment (additional context to consider):\n"
+                f"{user_info.user_comment}\n"
+                "\n"
+                "------------------------------\n"
+                "Data file content to analyze:\n\n"
+                f"{content}"
+            )
+
+        result = await Runner.run(self.agent, content)
+        logger.info("Data Description Agent result:")
+        logger.info(result.final_output)
+        return {result.final_output}
 
 
 class TranslationWorker(FlowWorker):
@@ -159,6 +178,15 @@ class TranslationWorker(FlowWorker):
         logger.info(result.final_output)
         return {result.final_output}
 
+""" class GitlabIssueWorker(FlowWorker):
+    def __init__(self):
+        self.agent = Agent(
+            name="Gitlab Issue Agent",
+            handoff_description="Agent for fetching information from Gitlab issue.",
+            instructions=get_gitlab_issue_prompt(),
+            model="gpt-4o-mini",
+            output_type=GitlabIssueData,
+        ) """
 
 class ParsingRulesWorker(FlowWorker):
     @dataclass
@@ -166,13 +194,14 @@ class ParsingRulesWorker(FlowWorker):
         # necessary for sharing the information to the function tools, which cannot have self argument
         parser_definition: ParserDefinitionData | None = None
         parsed_data: ParsedData | None = None
-        filename: str | None = None
+        file_path: str | None = None
 
     def __init__(self):
         self.agent = Agent[self.Context](
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
-            model="gpt-4o",
+            model="gpt-5.1",
+            model_settings=ModelSettings(reasoning={"effort": "medium"}),
             tools=[self.check_parsing_rules],
         )
         self.context = self.Context()
@@ -235,7 +264,7 @@ class ParsingRulesWorker(FlowWorker):
         try:
             ParserDefinitionData.model_validate(dict_rules)
             df = ParsingRulesWorker.parse_data(
-                string_json_parsing_rules, filename=wrapper.context.filename
+                string_json_parsing_rules, filename=wrapper.context.file_path
             )
             parsed_data = ParsedData(columns=[], rows=[])
             parsed_data.from_df(df)
@@ -264,11 +293,10 @@ class ParsingRulesWorker(FlowWorker):
             data_description.title_identifiers,
             platform.platform_name,
         )
-        with open(file.filename, "r") as f:
-            self.context.filename = file.filename
-            content = f.read()
-            await Runner.run(self.agent, content, context=self.context)
-            return {self.context.parser_definition, self.context.parsed_data}
+        content = file.to_llm_format()
+        self.context.file_path = file.path #todo name more reasonably
+        await Runner.run(self.agent, content, context=self.context)
+        return {self.context.parser_definition, self.context.parsed_data}
 
 
 FLOW_WORKERS: set[type[FlowWorker]] = {

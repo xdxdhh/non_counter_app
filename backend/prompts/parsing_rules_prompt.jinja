@@ -34,43 +34,41 @@ When it passes it will reuturn True, and you can stop and return the parsing rul
 Do not stop until you get True from the check_parsing_rules function.
 
 This is documentation regarding the parser format:
-##Parsing Rules
+#Parsing Rules
 
-###Coordinate Representation
-To navigate the files and locate relevant pieces of information, Source model is used.
-All the coordinates are global, with first cell having (0,0) coordinate.
-Coordinates are defined using zero-based indexing, where each coordinate represents a specific row and column in the input file. The first cell in the input file has  (0,0) coordinate.
-A Coordinate Range extends this definition by specifying an initial cell coordinate and a parsing direction (left, right, up, down).
-A Coordinate Range also includes an optional maximum count parameter, which limits the number of row/columns extracted in the specified direction.
+##Coordinate Representation
+To navigate the files and locate relevant pieces of information, a Source model is used.
 
-Example - this starts at cell (2, 1) and goes right, extracting up to 3 values:
+Source = typing.Union[Coord, CoordRange, Value, SheetAttr]
 
-{"coord": { "row": 2, "col": 1 },
-"direction": "right",
-"max_count": 3}
+### Coordinate System
+- Indexing is zero-based (Row 0 is the first row, Column 0 is Column A).
 
-
-Each \textbf{Source} of a value within the file is as one of the following:
-\begin{itemize}
-    \item \textbf{Coordinate} - A single cell in the file.
-    \item \textbf{Coordinate Range} - Starting cell and direction for extracting multiple values.
-    \item \textbf{Constant value} - A predefined static value, independent of the file content.
-\end{itemize}
-
-The source determines the location of specific data within the file, which is then repeatedly used in the parsing rules.
+### Source Types
+Each Source defines where a value comes from. It can be one of the following:
+1. Coordinate ("coord"): A single specific cell
+2. Coordinate Range: Starts at a specific cell and iterates in a direction to extract multiple values.
+    - Required: "coord" (start), "direction" ("left", "right", "up" or "down")
+    - Optional: "max_count" - limit the number of items
+    Example: {"coord": { "row": 2, "col": 1 }, "direction": "right", "max_count": 3}
+3. Constant value ("value"): A static value hardcoded in the JSON, useful for filling in missing fixed data usually coming from the user note.
+4. SheetAttribute ("sheet_attr"): Extracts metadata from the spreadsheet properties rather than cell contents.
+    - Use this when data (like Year or Organization) is in the Excel Tab Name instead of a cell.
+    - Literal["name", "sheet_idx"]
 
 ##Extraction Parameters
-The \textbf{Extraction Parameters} model provides additional constraints and methods for retrieving data from a given Source. 
+The Extraction Parameters model provides additional constraints and methods for retrieving data from a given Source. 
 These include:
 \begin{itemize}
     \item \textbf{default} - Specifies a fallback value to be used when an empty cell is encountered.
-    \item \textbf{last\_value\_as\_default} - Uses the last successfully extracted value as the default for empty cells, useful when all values are expected to be identical.
+    \item \textbf{last\_value\_as\_default} - A boolean flag. If true, when a "blank" cell is encountered, the parser will automatically reuse the value from the previous cell. This is essential for merged headers (e.g., "January" spanning two columns where the second cell is physically empty).
     \item \textbf{regex} - Defines a regular expression pattern to extract specific information from cell content.
-    \item \textbf{on\_validation\_error} - Determines the action taken when extraction fails. This parameter can have one of the following values:
+    \item \textbf{blank_values} - It explicitly defines what is considered "blank" for the purpose of the last_value_as_default: true logic, by default (None, "").
+    \item \textbf{on\_validation\_error} - Determines the action taken when extraction or validation fails (e.g., regex mismatch, wrong date format, or empty cell). This parameter can have one of the following values:
     \begin{itemize}
-        \item \textbf{fail} - The process stops and reports an error.
-        \item \textbf{skip} - The erroneous value is skipped, and processing continues.
-        \item \textbf{stop} - The process stops and reports an error.
+        \item \textbf{fail} - The validation failure is raised internally. This allows the parser to catch the error and apply the default value (or last value). Use this when you expect empty cells that should be filled in.
+        \item \textbf{skip} - The entire column/row is ignored and discarded from processing.
+        \item \textbf{stop} - The parser aborts processing immediately.
         \item \textbf{pass} - The invalid value is accepted without error handling.
     \end{itemize}
 \end{itemize}
@@ -101,27 +99,44 @@ This model does not introduce any additional parameters beyond the \textbf{sourc
 
 Dates are extracted using a specialized Content Extractor model \textbf{DateSource}. 
 Like other content extractors, this model is defined by three key components: Source, Extraction Parameters, and a predefined Role, which in this case is set to 'date'.
-In some cases month and year information is located in separate fields in the file rather than being a single entity.
+
+
+### Handling split dates
+In some cases, month and year information is located in separate cells. How you configure this depends on whether the date parts act as headers.
 
 There are two cases when this can happen:
-1. The month and year are both either in headers or outside the headers.
-In this case, this can be parsed using the \textbf{composed} parameter, which allows to specify separate sources for the year and month values. 
-An example of its usage is shown in Figure \ref{fig:composed_dates}.
 
-2. One part of the date is in the headers and the other part is not.
-In this case, the \textbf{composed} cannot be used, and instead, two separate date sources must be defined - one in the headers and one outside the headers.
-Each of this date sources only specifies one part of the date, either month or year.
+1. The month and year are both either in headers or outside the headers (in the same axis)
+In this case, this can be parsed using the \textbf{composed} parameter, which allows to specify separate sources for the year and month values. 
+
+2. One Part is a Header, One Part is a Row Label (Matrix Table)
+A common scenario in reports is where Months are Column Headers (Top) and Years are Row Headers (Left side), or vice versa.
+In this case, you must define TWO separate date sources and use data_cells_options to merge them.
+
+- Define the Row Label date in the main dates section (e.g., the Year in Column A).
+- Define the Column Header date inside data_headers.roles (e.g., the Month in Row 1).
+- CRITICAL: Set data_cells_options inside data_headers to tell the parser which part comes from where.
+
+Mechanism (data_cells_options):
+use_header_year: If false, the year comes from the Row Label (dates). If true, it comes from the Header (data_headers).
+use_header_month: If false, the month comes from the Row Label (dates). If true, it comes from the Header (data_headers).
 
 This extractor also has optional \textbf{date\_pattern} parameter, which specifies the format of the date in the source, 
-which helps parsing non-standard date formats.
+which helps parsing non-standard date formats. This should be provided as strftime pattern.
 
+Example: Matrix Table (Year in Row, Month in Header)
+    Scenario: Column A contains "2024", "2025". Row 0 contains "Jan", "Feb".
+    Setup:
+    Main dates: Source points to Col A (%Y).
+    Header role: Source points to Row 0 (%b).
+    data_cells_options: {"use_header_year": false, "use_header_month": true}.
 
 This is the DateSource pydantic model:
 class DateSource(BaseModel):
     source: Source
     extract_params: ExtractParams | None = ExtractParams()
     composed: ComposedDate | None = None
-    date_pattern: str | None = None
+    date_pattern: str | None = None - should be strftime pattern, such as %b-%y
     role: typing.Literal[RoleEnum.DATE]
 
 and this is the ComposedDate:
@@ -159,10 +174,21 @@ Data Headers model serves for defining the headers of the data.
 Headers may include different data, from dates and metrics to dimensions.
 They are again distinguished by the role parameter.
 
+This is the pydantic model:
+class DataHeaders(BaseModel):
+    roles: typing.List[typing.Union[MetricSource, DateSource]]
+    data_cells: CoordRange
+    data_direction: Direction
+    data_cells_options: DataCellsOptions | None = None
+    data_extract_params: ExtractParams | None = None
+
 This model is also used to locate the numerical values of the data.
 The \textbf{data\_cells} parameter specifies the location of the first data row/column, which are the actual values in the table.
-The \textbf{data\_direction} parameter specifies the direction in which the data is organized,
-indicating whether the next data will be obtained by going 'down' or 'right' from the data cells.
+The \textbf{data\direction} parameter specifies the "flow" of the values for a single column/series:
+- "down": Use this for standard tables where headers are at the top and values flow vertically down (e.g., row 4, row 5, row 6). This is perpendicular to the headers.
+- "right": Use this for transposed tables where headers are on the left and values flow horizontally to the right.
+The "data_cells_options" specifies how to metge dates that are not in the same axis (see Handling Split Dates)
+The "data_extract_params" is again the Extraction Parameters. This is mostly used using {"default" : 0} when there are some numerical data cells that are empty/nulls, to fill the data in.
 
 This is an example of Data Headers model, with date in the headers and the data cells.
 The first data cells is in (1,1), the one data is in one row, and data direction is down.
@@ -184,9 +210,17 @@ The first data cells is in (1,1), the one data is in one row, and data direction
 ##Area Definition
 Combining all the parsing rules together is Area model.
 
-In general (and this is very important), all the information can either be included in headers, or somewhere else in the file.
-When included in the headers, its Content Extractor will be under 'headers'.
-When included outside the headers, its Content Extractor will under its specialized field (e.g. metrics, dates, titles, etc.).
+The parser works by iterating through the data cells defined in data_headers. For every column (or row) it processes, it needs to know what that column represents.
+If the definition changes with every column (e.g., Column A is "Logins", Column B is "Searches"):
+- You MUST define this inside data_headers.roles.
+- If you leave data_headers.roles empty, the parser will iterate the columns but have no idea what they are, resulting in empty output.
+If the definition is static or found in the row itself (e.g., Column A is "Title", Column B is "Metric Name"):
+- You define this in the top-level fields (metrics, titles, dates) outside of data_headers.
+
+Example scenarios:
+> Table with Months across the top: The date role must be inside data_headers.roles.
+> Table with Metrics across the top: The metric role must be inside data_headers.roles.
+> Table with Years down the side: The date source is defined in the top-level dates field.
 
 Each parser definition file can include multiple areas (multiple tables in one file / sheet).
 
@@ -264,7 +298,7 @@ class ParserDefinition(BaseModel):
     platforms: typing.List[str] = []
     metrics_to_skip: typing.List[str] = []
     available_metrics: typing.Optional[typing.List[str]]
-    on_metric_check_failed: TableException.Action = TableException.Action.SKIP
+    on_metric_check_failed: TableException.Action = TableException.Action.skip
     titles_to_skip: typing.List[str] = []
     dimensions_to_skip: typing.Dict[str, typing.List[str]] = {}
     metric_aliases: typing.List[typing.Tuple[str, str]] = []
@@ -280,4 +314,3 @@ class NonCounterGeneric(BaseModel): #Generic Area Definition
     title_ids: typing.List[TitleIdSource] = []
     dimensions: typing.List[DimensionSource] = []
     organizations: typing.Optional[OrganizationSource]
-    
