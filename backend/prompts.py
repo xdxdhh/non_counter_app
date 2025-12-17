@@ -5,7 +5,7 @@ parsing_prompt = env.get_template("parsing_rules_prompt.jinja")
 translation_prompt = env.get_template("translation_prompt.jinja")
 data_description_prompt = env.get_template("data_description_prompt.jinja")
 platform_prompt = env.get_template("platform_prompt.jinja")
-
+gitlab_prompt = env.get_template("gitlab_issue_prompt.jinja")
 
 def get_platform_prompt():
     return platform_prompt.render()
@@ -18,6 +18,8 @@ def get_data_description_prompt():
 def get_translation_prompt():
     return translation_prompt.render()
 
+def get_gitlab_prompt():
+    return gitlab_prompt.render()
 
 def get_parsing_rules_prompt(
     metrics: list[str],
@@ -27,6 +29,7 @@ def get_parsing_rules_prompt(
     title_report: bool,
     title_identifiers: list,
     platform_name: str,
+    user_comment: str,
 ):
     prompt = parsing_prompt.render(
         metrics=metrics,
@@ -36,5 +39,6 @@ def get_parsing_rules_prompt(
         title_report=title_report,
         title_identifiers=title_identifiers,
         platform_name=platform_name,
+        user_comment=user_comment,
     )
     return prompt

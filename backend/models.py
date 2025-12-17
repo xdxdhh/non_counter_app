@@ -251,8 +251,10 @@ class PlatformData(FlowData):
     and the names of the parsers associated with the platform.
     """
     platform_name: str
-    exists: bool
-    parser_names: typing.List[str]
+    #exists: bool
+    #parser_names: typing.List[str]
+    provider: str | None = None
+    url: str | None = None
 
     @staticmethod
     def flow_data_name():
@@ -262,7 +264,8 @@ class UserInfoData(FlowData):
     """
     FlowData for storing any additional information provided by the user.
     """
-    user_comment: str
+    user_comment: str | None = None
+    gitlab_issue: int | None = None
 
     @staticmethod
     def flow_data_name():
@@ -270,18 +273,12 @@ class UserInfoData(FlowData):
 
 
 class FileFormat(str, Enum):
-    """
-    Enumeration for the format of the file.
-    """
     CSV = "csv"
     XLSX = "xlsx"
     XLS = "xls"
 
     @staticmethod
     def from_file_extension(filename: str) -> 'FileFormat':
-        """
-        Get the FileFormat from the file extension.
-        """
         if filename.endswith('.csv'):
             return FileFormat.CSV
         elif filename.endswith('.xlsx'):

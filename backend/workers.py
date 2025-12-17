@@ -8,11 +8,13 @@ from prompts import (
     get_parsing_rules_prompt,
     get_translation_prompt,
     get_platform_prompt,
+    get_gitlab_prompt,
 )
 from models import (
     PlatformData,
     DataDescriptionData,
     FileData,
+    FileFormat,
     ParserDefinitionData,
     ParsedData,
     TranslationData,
@@ -27,21 +29,55 @@ from celus_nibbler.parsers.dynamic import gen_parser
 from celus_nibbler import eat
 import pandas as pd
 import logging
+from utils.gitlab_client import GitLabClient, Issue
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class Platform(BaseModel):
     short_name: str
     name: str
-
+    provider: str | None = None
+    url: str | None = None
 
 class ParserDefinitionAPI(BaseModel):
     parser_name: str
     platforms: typing.List[str]
 
+
+class BrainMetric(BaseModel):
+    short_name: str
+    aliases: typing.List[str]
+
+class BrainDimension(BaseModel):
+    short_name: str
+    aliases: typing.List[str]
+
+class BrainClient():
+    def __init__(self):
+        self.token = os.environ.get('BRAIN_TOKEN')
+        self.base_url = "https://brain.celus.net/knowledgebase"
+
+    def get_metrics(self) -> typing.List[BrainMetric]:
+        url = f"{self.base_url}/metrics/"
+        headers = {
+            "Authorization": f"Token {self.token}"
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return [BrainMetric.model_validate(m) for m in response.json()]
+
+    def get_dimensions(self) -> typing.List[BrainDimension]:
+        url = f"{self.base_url}/dimensions/"
+        headers = {
+            "Authorization": f"Token {self.token}"
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return [BrainDimension.model_validate(d) for d in response.json()]
 
 class PlatformAgentWorker(FlowWorker):
     def __init__(self):
@@ -50,7 +86,7 @@ class PlatformAgentWorker(FlowWorker):
             handoff_description="Specialist agent for questions about platforms.",
             instructions=get_platform_prompt(),
             model="gpt-4o-mini",
-            tools=[self.fetch_all_platforms, self.fetch_all_parsers],
+            tools=[self.fetch_all_platforms],
             output_type=PlatformData,
         )
 
@@ -68,7 +104,7 @@ class PlatformAgentWorker(FlowWorker):
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             platforms = [Platform.model_validate(p) for p in response.json()]
-            return ",".join(f"{p.name}({p.short_name})" for p in platforms)
+            return platforms
         except requests.HTTPError as http_err:
             logger.error(f"HTTP error occurred: {http_err}")
             raise
@@ -178,15 +214,58 @@ class TranslationWorker(FlowWorker):
         logger.info(result.final_output)
         return {result.final_output}
 
-""" class GitlabIssueWorker(FlowWorker):
+class GitlabWorker(FlowWorker):
     def __init__(self):
         self.agent = Agent(
             name="Gitlab Issue Agent",
             handoff_description="Agent for fetching information from Gitlab issue.",
-            instructions=get_gitlab_issue_prompt(),
+            instructions=get_gitlab_prompt(),
             model="gpt-4o-mini",
-            output_type=GitlabIssueData,
-        ) """
+            output_type=PlatformData,
+        )
+
+    @staticmethod
+    def flow_worker_name():
+        return "gitlab_worker"
+
+    async def run(self, user_info: UserInfoData) -> set[PlatformData | FileData]:
+        issue_iid = user_info.gitlab_issue
+        if issue_iid is None:
+            return {PlatformData(platform_name="", short_name="", provider=None, url=None)}
+
+        # Fetch issue manually
+        logger.info(f"Fetching Gitlab issue {issue_iid}")
+        client = GitLabClient(
+            token=os.environ.get("GITLAB_API_TOKEN"),
+            project_id=os.environ.get("GITLAB_PROJECT_ID")
+        )
+        issue: Issue = client.get_issue(issue_iid)
+        client.download_files(issue.get_file_paths(), destination_folder="uploaded_files")
+    
+        # Prepare content for the agent
+        issue_content = issue.model_dump_json()
+        
+        # Run agent with issue content directly
+        result = await Runner.run(self.agent, issue_content)
+        output = PlatformData.model_validate(result.final_output)
+        
+        file_data = None
+        paths = issue.get_file_paths()
+        if paths:
+            # Take the first file for now
+            filename = paths[0].split('/')[-1]
+            file_path = os.path.join("uploaded_files", filename)
+            if os.path.exists(file_path):
+                
+                try:
+                    file_format = FileFormat.from_file_extension(filename)
+                    file_data = FileData(path=file_path, format=file_format)
+                except ValueError:
+                    logger.warning(f"Could not determine file format for {filename}")
+
+        if file_data:
+            return {output, file_data}
+        return {output}
 
 class ParsingRulesWorker(FlowWorker):
     @dataclass
@@ -283,6 +362,7 @@ class ParsingRulesWorker(FlowWorker):
         data_description: DataDescriptionData,
         platform: PlatformData,
         file: FileData,
+        user_info: UserInfoData,
     ) -> set[ParserDefinitionData, ParsedData]:
         self.agent.instructions = get_parsing_rules_prompt(
             data_description.metrics,
@@ -292,7 +372,9 @@ class ParsingRulesWorker(FlowWorker):
             data_description.title_report,
             data_description.title_identifiers,
             platform.platform_name,
+            user_info.user_comment,
         )
+        logger.info("USER COMMENT: %s", user_info.user_comment)
         content = file.to_llm_format()
         self.context.file_path = file.path #todo name more reasonably
         await Runner.run(self.agent, content, context=self.context)
@@ -304,4 +386,5 @@ FLOW_WORKERS: set[type[FlowWorker]] = {
     DataDescriptionWorker,
     ParsingRulesWorker,
     TranslationWorker,
+    GitlabWorker
 }

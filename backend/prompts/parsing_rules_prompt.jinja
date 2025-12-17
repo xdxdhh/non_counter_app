@@ -20,6 +20,10 @@ The title identifiers are {{ title_identifiers }}.
 The user also told you that this is not a title report, which means you should not include information about title and title identifiers.
 {% endif %}
 
+{% if user_comment  %}
+This is a user comment to consider: {{ user_comment }}
+{% endif %}
+
 You also know this data is from platform {{ platform_name }}.
 Comment all your thinking out loud.
 First analyze headers, distinguish which sources belong to headers and which ones do not.

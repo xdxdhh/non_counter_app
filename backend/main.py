@@ -4,7 +4,7 @@ import os
 import logging
 
 from base import Runtime
-from workers import FLOW_WORKERS
+from workers import FLOW_WORKERS, BrainClient
 from models import FLOW_DATA, FileData, FileFormat
 
 logging.basicConfig(level=logging.INFO)
@@ -128,3 +128,15 @@ async def call_worker(session_id: int, worker_name: str):
     flow_worker = get_flow_worker(worker_name)
     await runtime.run(flow_worker())
     return {"message": f"Worker {worker_name} executed successfully."}
+
+@app.get("/metrics")
+async def get_brain_metrics():
+    brain_client = BrainClient()
+    metrics = brain_client.get_metrics()
+    return metrics
+
+@app.get("/dimensions")
+async def get_brain_dimensions():
+    brain_client = BrainClient()
+    dimensions = brain_client.get_dimensions()
+    return dimensions

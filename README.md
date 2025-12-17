@@ -1,6 +1,6 @@
 # Non-Counter Data Processing Application
 
-## Backend
+## Setup
 
 Dependencies are managed using [`uv`](https://lithic.tech/uv).\
 They are listed in `pyproject.toml`.
@@ -25,3 +25,42 @@ To install dependencies, run: `npm install`.
 
 Frontend is wrriten in **Vue**, using Primevue extension. To launch the app on localhost, use `npm run dev`.
 
+## FlowData
+
+ParsedData
+    - columns, rows
+
+DataDescriptionData
+    - begin_month_year, end_month_year, english (yes, no), title_report (yes, no), granularity (monthly, daily, other), title_identifiers
+    - metrics, dimensions
+
+TranslationData
+    - metrics_translations
+    - dimensions_translations
+
+FileData
+    - path, format, file_name, sheets(name, contents)
+
+UserInfoData
+    - user_comment, gitlab_issue
+
+PlatformData
+    - platform_name, exists, provider, URL
+
+## FlowWorkers
+
+PlatformAgentWorker (turn into brain worker?)
+
+DataDescriptionWorker: FileData, UserInfoData -> DataDescriptionData
+
+TranslationWorker
+
+GitlabWorker: UserInfoData -> PlatformData, FileData
+
+ParsingRulesWorker: DataDescriptionData, PlatformData, FileData, UserInfoData -> ParserDefinitionData, ParsedData
+
+
+list vsech metrik v brainu
+
+[{file metric: , brain metric: , translation: }] - vygeneruje to castecne data description step / translation step,
+pak to zedituje uzivatel (put data) a ulozi to, zohledni se to v 
