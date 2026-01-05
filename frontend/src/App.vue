@@ -8,92 +8,97 @@
           <Card style="width: 50rem; overflow: hidden">
             <template #title>Input Information</template>
             <template #subtitle
-              >Fill in the information from the customer - platform name, the received file and any
-              comments you want to provide.</template
+              >Fill in the information from the customer - platform name, the received file and any comments you want to
+              provide. Alternatively, fill in the Gitlab Issue number to autofill the information from this
+              issue.</template
             >
             <template #content>
-              <div class="input-card-content">
-                <div class="input-card-left">
-                  <div style="padding-bottom: 10px">
+              <div class="flex items-center gap-2">
+                <span>Gitlab Issue ID (without #): </span>
+                <InputText v-model="gitlabIssue" style="width: 200px" />
+                <Button label="Fill from issue" @click="() => fillFromGitlab()" severity="info" />
+              </div>
+
+              <Card class="!bg-blue-50 !border !border-blue-200 !rounded-none !mt-5">
+                <template #title>User Information</template>
+                <template #content>
+                  <div>
                     <FloatLabel variant="on">
-                      <InputText id="on_label" v-model="platformInfo.name" style="width: 300px" />
-                      <label for="on_label">Platform Name</label>
+                      <Textarea v-model="userComment" rows="4" cols="60" />
+                      <label for="on_label">User Comment</label>
                     </FloatLabel>
                   </div>
-                  <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <Textarea
-                        id="over_label"
-                        v-model="platformInfo.provider"
-                        rows="1"
-                        cols="30"
-                        style="resize: none"
-                      />
-                      <label for="on_label">Provider</label>
-                    </FloatLabel>
-                  </div>
-                  <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <Textarea
-                        id="over_label"
-                        v-model="userComment"
-                        rows="5"
-                        cols="30"
-                        style="resize: none"
-                      />
-                      <label for="on_label">User Comments</label>
-                    </FloatLabel>
-                  </div>
-                  <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <Textarea
-                        id="over_label"
-                        v-model="platformInfo.url"
-                        rows="1"
-                        cols="30"
-                        style="resize: none"
-                      />
-                      <label for="on_label">Platform URL</label>
-                    </FloatLabel>
-                  </div>
-                  <FileUpload
-                    ref="fileupload"
-                    mode="basic"
-                    name="file"
-                    :maxFileSize="1000000"
-                    @select="onFileSelect"
-                    chooseLabel="CSV/Excel File"
-                    accept="text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    style="justify-content: left; display: block"
-                  />
-                  <div v-if="file" style="margin-top: 5px; font-size: 0.9rem; color: #666">
-                    Selected file: {{ selectedFileName }}
-                  </div>
+                  <div>GItlab Issue: {{ gitlabIssue }}</div>
+                  <div>File: {{ selectedFileName }}</div>
+                </template>
+              </Card>
+              <div class="flex gap-4">
+                <Card class="!bg-blue-50 !border !border-blue-200 !rounded-none !mt-5 flex-1">
+                  <template #title>Platform</template>
+                  <template #content>
+                    <div class="flex flex-col gap-2">
+                      <FloatLabel variant="on">
+                        <InputText v-model="platformInfo.name" />
+                        <label for="on_label">Name</label>
+                      </FloatLabel>
+                      <FloatLabel variant="on">
+                        <InputText v-model="platformInfo.provider" />
+                        <label for="on_label">Provider</label>
+                      </FloatLabel>
+                      <FloatLabel variant="on">
+                        <InputText v-model="platformInfo.url" />
+                        <label for="on_label">URL</label>
+                      </FloatLabel>
+                      <Button label="Create this platform" @click="() => {}" severity="info" />
+                    </div>
+                  </template>
+                </Card>
+                <Card class="!bg-blue-50 !border !border-blue-200 !rounded-none !mt-5 flex-1">
+                  Name:
+                  Provider:
+                  URL:
+
+
+                </Card>
+              </div>
+
+              <!-- <div class="input-card-content">
+                <div style="padding-bottom: 10px">
+                  <FloatLabel variant="on">
+                    <Textarea id="over_label" v-model="platformInfo.provider" rows="1" cols="30" style="resize: none" />
+                    <label for="on_label">Provider</label>
+                  </FloatLabel>
+                </div>
+                <div style="padding-bottom: 10px">
+                  <FloatLabel variant="on">
+                    <Textarea id="over_label" v-model="userComment" rows="5" cols="30" style="resize: none" />
+                    <label for="on_label">User Comments</label>
+                  </FloatLabel>
+                </div>
+                <div style="padding-bottom: 10px">
+                  <FloatLabel variant="on">
+                    <Textarea id="over_label" v-model="platformInfo.url" rows="2" cols="30" style="resize: none" />
+                    <label for="on_label">Platform URL</label>
+                  </FloatLabel>
+                </div>
+                <FileUpload
+                  ref="fileupload"
+                  mode="basic"
+                  name="file"
+                  :maxFileSize="1000000"
+                  @select="onFileSelect"
+                  chooseLabel="CSV/Excel File"
+                  accept="text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  style="justify-content: left; display: block"
+                />
+                <div v-if="file" style="margin-top: 5px; font-size: 0.9rem; color: #666">
+                  Selected file: {{ selectedFileName }}
                 </div>
 
                 <div class="input-card-divider" />
 
-                <div class="input-card-right">
-                  <div style="font-weight: 600; padding-bottom: 10px">From GitLab</div>
-                  <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <InputText id="gitlab_issue" v-model="gitlabIssue" style="width: 200px" />
-                      <label for="gitlab_issue">Issue number</label>
-                    </FloatLabel>
-                  </div>
-                  <small class="helper-text">
-                    Paste the GitLab issue number (without #) to autofill the information from this
-                    issue.
-                  </small>
-                  <div style="padding-top: 8px">
-                    <Button
-                      label="Fill from issue"
-                      @click="() => fillFromGitlab()"
-                      severity="primary"
-                    />
-                  </div>
-                </div>
-              </div>
+                <div style="font-weight: 600; padding-bottom: 10px">From GitLab</div>
+              </div> -->
             </template>
             <template #footer>
               <div style="padding-top: 30px">
@@ -108,15 +113,13 @@
         <StepPanel v-slot="{ activateCallback }">
           <Card style="width: 50rem; overflow: hidden">
             <template #content>
-              <div v-if="dataDescriptionState == 'loading'">
-                Generating Data Description, please wait...
-              </div>
+              <div v-if="dataDescriptionState == 'loading'">Generating Data Description, please wait...</div>
               <div class="data-description" v-if="dataDescriptionState == 'done'">
                 <div style="font-weight: bold">Generated Data Description</div>
                 <div style="padding-top: 10px; padding-bottom: 20px">
-                  This is the data information received from the input file. Please modify it if you
-                  find any discrepancies or if some metrics or dimensions are unnecessary. This
-                  information will be used to generate the parsing rules.
+                  This is the data information received from the input file. Please modify it if you find any
+                  discrepancies or if some metrics or dimensions are unnecessary. This information will be used to
+                  generate the parsing rules.
                 </div>
 
                 <div style="padding-bottom: 10px">
@@ -147,12 +150,8 @@
                     >Do you want to translate the data?
                     <Button label="Yes" @click="translateData" />
                   </span>
-                  <div v-if="translations">
-                    Generated translations for metrics: {{ metricsTranslations }}
-                  </div>
-                  <div v-if="translations">
-                    Generated translations for dimensions: {{ dimTranslations }}
-                  </div>
+                  <div v-if="translations">Generated translations for metrics: {{ metricsTranslations }}</div>
+                  <div v-if="translations">Generated translations for dimensions: {{ dimTranslations }}</div>
                 </div>
 
                 <div class="flex items-center gap-2" style="padding-bottom: 10px">
@@ -236,22 +235,12 @@
                       </Column>
                       <Column header="Actions" style="width: 6rem">
                         <template #body="{ data }">
-                          <Button
-                            icon="pi pi-trash"
-                            severity="danger"
-                            text
-                            @click="() => deleteMetricRow(data.id)"
-                          />
+                          <Button icon="pi pi-trash" severity="danger" text @click="() => deleteMetricRow(data.id)" />
                         </template>
                       </Column>
                     </DataTable>
                     <div style="padding-top: 8px">
-                      <Button
-                        icon="pi pi-plus"
-                        label="Add"
-                        severity="secondary"
-                        @click="addMetricRow"
-                      />
+                      <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addMetricRow" />
                     </div>
                   </FloatLabel>
                 </div>
@@ -312,12 +301,7 @@
                       </Column>
                     </DataTable>
                     <div style="padding-top: 8px">
-                      <Button
-                        icon="pi pi-plus"
-                        label="Add"
-                        severity="secondary"
-                        @click="addDimensionRow"
-                      />
+                      <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addDimensionRow" />
                     </div>
                   </FloatLabel>
                 </div>
@@ -325,13 +309,9 @@
             </template>
             <template #footer>
               <div v-if="dataDescriptionState == 'done'">
-                Please make changes if needed. Do you want to use this data description to generate
-                the parsing rules?
+                Please make changes if needed. Do you want to use this data description to generate the parsing rules?
                 <div>
-                  <Button
-                    label="Generate Parsing Rules"
-                    @click="() => generateParsingRules(activateCallback)"
-                  />
+                  <Button label="Generate Parsing Rules" @click="() => generateParsingRules(activateCallback)" />
                 </div>
               </div>
             </template>
@@ -343,12 +323,8 @@
         <StepPanel v-slot="{ activateCallback }">
           <Card style="width: 50rem; overflow: hidden">
             <template #content>
-              <div v-if="parsingRulesState == 'loading'">
-                Generating parsing rules, please wait...
-              </div>
-              <div v-if="parsingRulesState == 'done'">
-                These are parsing rules generated by the model.
-              </div>
+              <div v-if="parsingRulesState == 'loading'">Generating parsing rules, please wait...</div>
+              <div v-if="parsingRulesState == 'done'">These are parsing rules generated by the model.</div>
               <div v-if="parsingRulesState == 'failed'">
                 Parsing rules generation failed. Please retry from the Data Description step.
               </div>
@@ -360,13 +336,7 @@
             <Button label="Back" severity="secondary" @click="activateCallback('2')" />
           </div>
           <DataTable :value="rows">
-            <Column
-              v-for="col in columns"
-              :key="col"
-              :field="col"
-              size="small"
-              :header="col"
-            />
+            <Column v-for="col in columns" :key="col" :field="col" size="small" :header="col" />
           </DataTable>
         </StepPanel>
       </StepItem>
@@ -406,6 +376,7 @@ const platformInfo = reactive({
   name: '',
   provider: '',
   url: '',
+  exists: false,
 })
 
 const userComment = ref('') //user input - any comment
@@ -413,16 +384,8 @@ const file = ref<File | null>(null)
 const selectedFileName = ref('')
 const gitlabIssue = ref('')
 
-const titleIdentifierOptions: string[] = [
-  'Print_ISSN',
-  'Online_ISSN',
-  'ISBN',
-  'DOI',
-  'URI',
-  'Proprietary',
-]
+const titleIdentifierOptions: string[] = ['Print_ISSN', 'Online_ISSN', 'ISBN', 'DOI', 'URI', 'Proprietary']
 const granularityOptions: string[] = ['daily', 'monthly', 'other']
-
 
 const parsingRules = ref('') // JSON string of the parsing rules
 
@@ -578,6 +541,7 @@ const processPlatform = async (activateCallback: (step: string) => void) => {
     platform_name: platformInfo.name,
     provider: platformInfo.provider,
     url: platformInfo.url,
+    exists: platformInfo.exists,
   })
   //dunno about the file
 
@@ -587,6 +551,7 @@ const processPlatform = async (activateCallback: (step: string) => void) => {
   if (newPlatformData) {
     console.log('New platform data:', newPlatformData)
     platformInfo.name = newPlatformData.platform_name
+    platformInfo.exists = newPlatformData.exists
     platformInfo.provider = newPlatformData.provider || ''
     platformInfo.url = newPlatformData.url || ''
     platformState.value = 'done'
@@ -623,6 +588,7 @@ const fillFromGitlab = async () => {
     platformInfo.name = newPlatformData.platform_name
     platformInfo.provider = newPlatformData.provider || ''
     platformInfo.url = newPlatformData.url || ''
+    platformInfo.exists = newPlatformData.exists
     platformState.value = 'done'
   } else {
     console.error('No platform data returned from gitlab_worker')

@@ -37,7 +37,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class Platform(BaseModel):
+class BrainPlatform(BaseModel):
     short_name: str
     name: str
     provider: str | None = None
@@ -103,7 +103,7 @@ class PlatformAgentWorker(FlowWorker):
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            platforms = [Platform.model_validate(p) for p in response.json()]
+            platforms = [BrainPlatform.model_validate(p) for p in response.json()]
             return platforms
         except requests.HTTPError as http_err:
             logger.error(f"HTTP error occurred: {http_err}")

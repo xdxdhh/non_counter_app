@@ -251,7 +251,7 @@ class PlatformData(FlowData):
     and the names of the parsers associated with the platform.
     """
     platform_name: str
-    #exists: bool
+    exists: bool
     #parser_names: typing.List[str]
     provider: str | None = None
     url: str | None = None
