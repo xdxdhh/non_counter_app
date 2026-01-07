@@ -4,6 +4,40 @@ const axios_client = axios.create({
   baseURL: 'http://127.0.0.1:8000/',
 })
 
+/** DRF validation error format: { field_name: ["error message", ...], ... } */
+type DRFValidationError = Record<string, string[]>
+
+/** FastAPI wraps errors in { detail: ... } */
+interface FastAPIErrorResponse {
+  detail: DRFValidationError | string
+}
+
+/**
+ * Extracts error message from Brain API responses.
+ * Brain uses DRF format: {"field": ["error msg"]}
+ * FastAPI wraps it in: {"detail": {"field": ["error msg"]}}
+ */
+export function extractErrorMessage(error: unknown): string {
+  if (!axios.isAxiosError<FastAPIErrorResponse>(error)) {
+    return String(error)
+  }
+
+  const detail = error.response?.data?.detail
+  
+  if (typeof detail === 'string') {
+    return detail
+  }
+  
+  if (detail && typeof detail === 'object') {
+    // DRF validation errors: { field_name: ["message1", "message2"], ... }
+    return Object.entries(detail)
+      .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
+      .join('; ')
+  }
+  
+  return error.message
+}
+
 const getState = async (sessionId: number, stateName: string) => {
   console.log('Getting state:', stateName)
   try {
@@ -40,6 +74,7 @@ const callWorker = async (sessionId: number, workerName: string) => {
 
 
 export interface BrainMetric {
+  id: number
   short_name: string
   aliases: string[]
   toDisplay: () => string
@@ -64,7 +99,8 @@ const getBrainMetrics = async () => {
   try {
     const response = await axios_client.get('metrics')
     console.log('Response from backend:', response)
-    return response.data.map((metric: { short_name: string; aliases: string[] }) => ({
+    return response.data.map((metric: { id: number; short_name: string; aliases: string[] }) => ({
+      id: metric.id,
       short_name: metric.short_name,
       aliases: metric.aliases,
       toDisplay: () =>
@@ -76,6 +112,7 @@ const getBrainMetrics = async () => {
 }
 
 export interface BrainDimension {
+  id: number
   short_name: string
   aliases: string[]
   toDisplay: () => string
@@ -86,7 +123,8 @@ const getBrainDimensions = async () => {
   try {
     const response = await axios_client.get('dimensions')
     console.log('Response from backend:', response)
-    return response.data.map((dimension: { short_name: string; aliases: string[] }) => ({
+    return response.data.map((dimension: { id: number; short_name: string; aliases: string[] }) => ({
+      id: dimension.id,
       short_name: dimension.short_name,
       aliases: dimension.aliases,
       toDisplay: () =>

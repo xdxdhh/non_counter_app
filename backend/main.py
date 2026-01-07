@@ -2,10 +2,13 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
+import requests
 
 from base import Runtime
 from workers import FLOW_WORKERS, BrainClient
-from models import FLOW_DATA, FileData, FileFormat
+from models import FLOW_DATA, FileData, FileFormat, PlatformData, UserInfoData, MetricsDimensionsData, DataDescriptionData
+from utils.gitlab_client import GitLabClient
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -140,3 +143,47 @@ async def get_brain_dimensions():
     brain_client = BrainClient()
     dimensions = brain_client.get_dimensions()
     return dimensions
+
+@app.get("/submit_platform/{session_id}")
+async def submit_platform(session_id: int):
+    runtime = get_runtime(session_id)
+    platform_data = runtime.get_state('platform_data', PlatformData)
+    user_info_data = runtime.get_state('user_info_data', UserInfoData)
+    brain_client = BrainClient()
+    # Create platform in Brain if needed and store updated state (exists/id)
+    try:
+        platform_data = brain_client.get_or_create_platform(platform_data)
+    except requests.HTTPError as e:
+        # Extract meaningful error detail from the Brain API response
+        detail = {"error": str(e)}
+        if e.response is not None:
+            try:
+                detail = e.response.json()
+            except ValueError:
+                detail = {"error": e.response.text or str(e)}
+        raise HTTPException(status_code=400, detail=detail)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={"error": str(e)})
+    runtime.set_state(platform_data)
+    gitlab_client = GitLabClient(
+            token=os.environ.get("GITLAB_API_TOKEN"),
+            project_id=os.environ.get("GITLAB_PROJECT_ID")
+        )
+    gitlab_client.add_issue_comment(user_info_data.gitlab_issue, platform_data.to_gitlab_comment())
+
+@app.post("/submit_metrics_dimensions/{session_id}")
+async def process_metrics_dimensions(session_id: int):
+    runtime = get_runtime(session_id)
+    metrics_dimensions_data = runtime.get_state('metrics_dimensions_data', MetricsDimensionsData)
+    user_info_data = runtime.get_state('user_info_data', UserInfoData)
+    brain_client = BrainClient()
+    metrics_dimensions_data = brain_client.process_metrics_dimensions(metrics_dimensions_data)
+    runtime.set_state(metrics_dimensions_data)
+    gitlab_client = GitLabClient(
+            token=os.environ.get("GITLAB_API_TOKEN"),
+            project_id=os.environ.get("GITLAB_PROJECT_ID")
+        )
+    gitlab_client.add_issue_comment(user_info_data.gitlab_issue,metrics_dimensions_data.to_gitlab_comment())
+    platform_data = runtime.get_state('platform_data', PlatformData)
+    data_description_data = runtime.get_state('data_description_data', DataDescriptionData)
+    brain_client.create_report_type(metrics_dimensions_data, platform_data, data_description_data)

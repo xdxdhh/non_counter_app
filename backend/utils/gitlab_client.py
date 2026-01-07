@@ -87,3 +87,16 @@ class GitLabClient:
             with open(os.path.join(destination_folder, file_path.split('/')[-1]), 'wb') as f:
                 f.write(response.content)
             logger.info(f"Downloaded file {file_path.split('/')[-1]} to {destination_folder}")
+
+    def add_issue_comment(self, issue_iid: int, comment: str) -> None:
+        url = f"{self.api_base}/projects/{self.project_id}/issues/{issue_iid}/notes"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "body": comment
+        }
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        logger.info(f"Added comment to issue {issue_iid}")

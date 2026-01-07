@@ -6,6 +6,7 @@ import App from './App.vue'
 import PrimeVue from 'primevue/config'
 import Aura from '@primeuix/themes/aura'
 import { definePreset } from '@primeuix/themes'
+import Tooltip from 'primevue/tooltip'
 
 const CustomPreset = definePreset(Aura, {
   semantic: {
@@ -54,4 +55,5 @@ app.use(PrimeVue, {
     options: { darkModeSelector: false },
   },
 })
+app.directive('tooltip', Tooltip)
 app.mount('#app')

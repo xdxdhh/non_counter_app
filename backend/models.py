@@ -250,15 +250,22 @@ class PlatformData(FlowData):
     This includes the platform name, whether it exists,
     and the names of the parsers associated with the platform.
     """
-    platform_name: str
+    name: str
     exists: bool
-    #parser_names: typing.List[str]
-    provider: str | None = None
-    url: str | None = None
+    short_name: str
+    provider: str
+    url: str
+    pk: int | None
 
     @staticmethod
     def flow_data_name():
         return 'platform_data'
+
+    def to_gitlab_comment(self) -> str:
+        lines: list[str] = []
+        lines.append(f"### Platform - {self.name}")
+        lines.append(f"https://staging.brain.celus.net/admin/knowledgebase/platform/{self.pk}/")
+        return "\n".join(lines)
 
 class UserInfoData(FlowData):
     """
@@ -392,6 +399,7 @@ class DataDescriptionData(FlowData):
     @staticmethod
     def flow_data_name():
         return 'data_description_data'
+    #TODO add organizations
 
 class ParsedData(FlowData):
     """
@@ -403,8 +411,9 @@ class ParsedData(FlowData):
     where each dictionary contains the data for each row.
     The from_df method converts a pandas DataFrame to the FlowData format.
     """
-    columns: list[dict[str,str]]
-    rows: list[dict[str,str]]
+    # Columns are simple strings, but row values can be ints/dates/etc coming from pandas parsing.
+    columns: list[dict[str, str]]
+    rows: list[dict[str, typing.Any]]
 
     def from_df(self, df: pd.DataFrame):
         self.columns = [{"field": col, "header": col} for col in df.columns]
@@ -413,6 +422,78 @@ class ParsedData(FlowData):
     @staticmethod
     def flow_data_name():
         return 'parsed_data'
-    
-FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData, TranslationData}
+
+class BrainPlatform(BaseModel):
+    short_name: str
+    name: str
+    provider: str | None = None
+    url: str | None = None
+    pk: int
+
+class ParserDefinitionAPI(BaseModel):
+    parser_name: str
+    platforms: typing.List[str]
+
+
+class BrainMetric(BaseModel):
+    id: int
+    short_name: str
+    aliases: typing.List[str]
+
+class BrainDimension(BaseModel):
+    id: int
+    short_name: str
+    aliases: typing.List[str]
+
+class MetricMapping(BaseModel):
+    data_metric: str
+    brain_metric: BrainMetric | None
+
+class DimensionMapping(BaseModel):
+    data_dimension: str
+    brain_dimension: BrainDimension | None
+
+class MetricsDimensionsData(FlowData):
+    metrics: list[MetricMapping]
+    dimensions: list[DimensionMapping]
+
+    @staticmethod
+    def flow_data_name():
+        return 'metrics_dimensions_data'
+
+    def to_gitlab_comment(self) -> str:
+        lines: list[str] = []
+        lines.append("### Metrics")
+        for metric in self.metrics:
+            lines.append(
+            f"- {metric.data_metric} - `{metric.brain_metric.short_name}`: "
+            f"https://staging.brain.celus.net/admin/knowledgebase/metric/{metric.brain_metric.id}/"
+        )
+        lines.append("### Dimensions")
+        for dimension in self.dimensions:
+            lines.append(
+            f"- {dimension.data_dimension} - `{dimension.brain_dimension.short_name}`: "
+            f"https://staging.brain.celus.net/admin/knowledgebase/dimension/{dimension.brain_dimension.id}/"
+        )
+        return "\n".join(lines)
+
+class MetricInterestGroup(BaseModel):
+    metric: int
+    interest_group: str
+
+class ReportTypeData(FlowData):
+    short_name: str
+    name: str
+    platforms: list[int]
+    dimensions: list[int]
+    uses_titles: bool
+    uses_items: bool
+    metrics: list[MetricInterestGroup]
+
+    @staticmethod
+    def flow_data_name():
+        return 'report_type_data'
+
+
+FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData, TranslationData, MetricsDimensionsData, ReportTypeData}
 
