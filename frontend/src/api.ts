@@ -80,18 +80,21 @@ export interface BrainMetric {
   toDisplay: () => string
 }
 
-// Frontend mapping types - combines data from file with brain metric/dimension selection
-// Uses simple auto-incrementing IDs for table keys (generated on frontend only)
+// Frontend mapping types - matches backend structure
+// id is optional and used only for frontend table keys
+// brain_metric/brain_dimension can be either BrainMetric/BrainDimension instances
+// (from frontend lookups) or plain objects (from backend responses)
 export interface MetricMapping {
-  id: number
-  dataMetric: string
-  brainMetric: string
+  id?: number
+  data_metric: string
+  brain_metric: BrainMetric | { id: number; short_name: string; aliases: string[] } | null
+  interest_group?: string | null
 }
 
 export interface DimensionMapping {
-  id: number
-  dataDimension: string
-  brainDimension: string
+  id?: number
+  data_dimension: string
+  brain_dimension: BrainDimension | { id: number; short_name: string; aliases: string[] } | null
 }
 
 const getBrainMetrics = async () => {

@@ -6,7 +6,6 @@ from prompts import (
     get_data_description_prompt,
     get_parsing_rules_prompt,
     get_translation_prompt,
-    get_platform_prompt,
     get_gitlab_prompt,
 )
 from models import (
@@ -22,8 +21,10 @@ from models import (
     BrainMetric,
     BrainDimension,
     BrainPlatform,
-    ParserDefinitionAPI,
+    ReportTypeData,
+    BrainParserDefinition,
 )
+from pydantic import BaseModel
 from dataclasses import dataclass
 from dotenv import load_dotenv
 import os
@@ -73,7 +74,12 @@ class BrainClient:
             )
             response = requests.get(detail_url, headers=self.headers, timeout=30)
             if not response.ok:
-                logger.error("Brain %s %s failed: %s", response.request.method, response.url, response.text)
+                logger.error(
+                    "Brain %s %s failed: %s",
+                    response.request.method,
+                    response.url,
+                    response.text,
+                )
             response.raise_for_status()
             existing = BrainPlatform.model_validate(response.json())
             return PlatformData(
@@ -98,7 +104,12 @@ class BrainClient:
         )
         response = requests.post(url, headers=self.headers, json=payload, timeout=30)
         if not response.ok:
-            logger.error("Brain %s %s failed: %s", response.request.method, response.url, response.text)
+            logger.error(
+                "Brain %s %s failed: %s",
+                response.request.method,
+                response.url,
+                response.text,
+            )
         response.raise_for_status()
         created = BrainPlatform.model_validate(response.json())
         return PlatformData(
@@ -138,114 +149,141 @@ class BrainClient:
     ) -> MetricsDimensionsData:
         metrics = metrics_dimensions_data.metrics
         dimensions = metrics_dimensions_data.dimensions
+
         for metric in metrics:
-            if metric.brain_metric is None:  # we have to create the metric
-                metric.brain_metric = self.create_metric(metric.data_metric)
+            if metric.brain_metric is not None:
+                # If id is 0, it means we need to create a new metric with the provided short_name
+                if metric.brain_metric.id == 0:
+                    metric.brain_metric = self.create_metric(
+                        metric.brain_metric.short_name
+                    )
+                # If id > 0, it's an existing metric - use it as is
+                # (The metric should already exist in Brain)
+
         for dimension in dimensions:
-            if dimension.brain_dimension is None:
-                dimension.brain_dimension = self.create_dimension(
-                    dimension.data_dimension
-                )
+            if dimension.brain_dimension is not None:
+                # Same logic for dimensions
+                if dimension.brain_dimension.id == 0:
+                    dimension.brain_dimension = self.create_dimension(
+                        dimension.brain_dimension.short_name
+                    )
+                # If id > 0, it's an existing dimension - use it as is
+
         return metrics_dimensions_data
 
-    def create_report_type(
-        self,
-        metrics_dimensions_data: MetricsDimensionsData,
-        platform_data: PlatformData,
-        data_description_data: DataDescriptionData,
-    ):
-        dimension_ids = [
-            dimension.brain_dimension.id
-            for dimension in metrics_dimensions_data.dimensions
-        ]
-        metric_ids = [
-            metric.brain_metric.id for metric in metrics_dimensions_data.metrics
-        ]
-        metrics_with_groups = [
-            {"metric": mid, "interest_group": "Full text"} for mid in metric_ids
-        ]
-        report_type = {
-            "short_name": f"{platform_data.short_name}-test",
-            "name": f"{platform_data.name} Test",
-            "platforms": [platform_data.pk],
-            "dimensions": dimension_ids,
-            "uses_titles": data_description_data.title_report,
-            "uses_items": False,
-            "metrics": metrics_with_groups,
-        }
+    def create_report_type(self, report_type: ReportTypeData):
         logger.info(f"Creating report type: {report_type}")
         url = f"{self.base_url}/report_types/"
-        response = requests.post(url, headers=self.headers, json=report_type, timeout=30)
+        response = requests.post(
+            url,
+            headers=self.headers,
+            json=report_type.model_dump(mode="json"),
+            timeout=30,
+        )
         if not response.ok:
-            logger.error("Brain %s %s failed: %s", response.request.method, response.url, response.text)
+            logger.error(
+                "Brain %s %s failed: %s",
+                response.request.method,
+                response.url,
+                response.text,
+            )
         response.raise_for_status()
-        return response.json()
+        report_type = ReportTypeData.model_validate(response.json())
+        return report_type
 
-class PlatformAgentWorker(FlowWorker):
-    def __init__(self):
-        self.agent = Agent(
-            name="Platform Agent",
-            handoff_description="Specialist agent for questions about platforms.",
-            instructions=get_platform_prompt(),
-            model="gpt-4o-mini",
-            tools=[self.fetch_all_platforms],
-            output_type=PlatformData,
+    def upload_input_sample(
+        self,
+        file_data: FileData,
+        platform_data: PlatformData,
+        data_description_data: DataDescriptionData,
+        user_info_data: UserInfoData,
+    ):
+        url = f"{self.base_url}/samples/"
+        gitlab_client = GitLabClient(
+            token=os.environ.get("GITLAB_API_TOKEN"),
+            project_id=os.environ.get("GITLAB_PROJECT_ID"),
         )
 
-    @function_tool
-    async def fetch_all_platforms() -> str:
-        """Fetch all available platforms from Brain API.
-        Returns them in format platform_name(short_name)."""
+        mime_types = {
+            FileFormat.CSV: "text/csv",
+            FileFormat.XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            FileFormat.XLS: "application/vnd.ms-excel",
+        }
+        mime_type = mime_types[file_data.format]
 
-        url = "https://brain.celus.net/knowledgebase/platforms/"
-        headers = {
-            "Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"
-        }  # expects BRAIN_TOKEN in env
-        logger.info("Fetching all platforms")
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            platforms = [BrainPlatform.model_validate(p) for p in response.json()]
-            return platforms
-        except requests.HTTPError as http_err:
-            logger.error(f"HTTP error occurred: {http_err}")
-            raise
-        except Exception as err:
-            logger.error(f"An error occurred: {err}")
-            raise
+        with open(file_data.path, "rb") as file:
+            response = requests.post(
+                url,
+                headers=self.headers,
+                data={
+                    "name": user_info_data.source,
+                    "platform": platform_data.pk,
+                    "month_start": data_description_data.begin_month_year,
+                    "month_end": data_description_data.end_month_year,
+                },
+                files={"file": (file_data.file_name, file, mime_type)},
+            )
+        response.raise_for_status()
+        sample_id = response.json()["id"]
+        comment = ""
+        comment += "## Input Sample\n"
+        comment += f"Uploaded input sample for {file_data.file_name}:\n https://staging.brain.celus.net/admin/nibbler/inputsample/{sample_id}/\n"
+        comment += f"Platform: {platform_data.name}\n"
+        comment += f"Month start: {data_description_data.begin_month_year.strftime('%Y-%m-%d')}\n"
+        comment += (
+            f"Month end: {data_description_data.end_month_year.strftime('%Y-%m-%d')}\n"
+        )
+        gitlab_client.add_issue_comment(user_info_data.gitlab_issue, comment)
 
-    @function_tool
-    async def fetch_all_parsers() -> str:
-        """Fetch all available parsers from Brain API.
-        Returns them in format parser_name(platforms).
-        """
-        url = "https://brain.celus.net/knowledgebase/parsers/"
-        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
-        logger.info("Fetching all parsers")
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            parsers = [ParserDefinitionAPI.model_validate(p) for p in response.json()]
-            return ",".join(f"Parser {p.parser_name}({p.platforms})" for p in parsers)
-        except requests.HTTPError as http_err:
-            logger.error(f"HTTP error occurred: {http_err}")
-            raise
-        except Exception as err:
-            logger.error(f"An error occurred: {err}")
-            raise
+    def create_or_update_parser_definition(self, generated_rules: dict, report_type_id: int, parser_id: int | None = None):
+        logger.info(f"Creating or updating parser definition: {generated_rules}")
+        # read report type from file:
+        url = f"{self.base_url}/parsers/"
+        kind = "non_counter.generic"
+        version = 1
+        parser_name = "default_parser"
+        report_type = report_type_id
+        areas = generated_rules.get("areas", [])
+        metrics_to_skip = generated_rules.get("metrics_to_skip", [])
+        titles_to_skip = generated_rules.get("titles_to_skip", [])
+        dimensions_to_skip = generated_rules.get("dimensions_to_skip", {})
+        dimensions_validators = generated_rules.get("dimensions_validators", {})
+        heuristics = generated_rules.get("heuristics", {})
 
-    @staticmethod
-    def flow_worker_name():
-        return "platform_worker"
-
-    async def run(self, platform: PlatformData) -> set[PlatformData]:
-        logger.info(f"Platform Agent: Checking platform {platform.platform_name}")
-        prompt = f"I am interested in {platform.platform_name} platform."
-        result = await Runner.run(self.agent, prompt)
-        # create the PlatformData object
-        logger.info(f"Platform Agent result: {result.final_output}")
-        output = PlatformData.model_validate(result.final_output)
-        return {output}
+        parser_def = BrainParserDefinition(
+            kind=kind,
+            version=version,
+            parser_name=parser_name,
+            report_type=report_type,
+            areas=areas,
+            metrics_to_skip=metrics_to_skip,
+            titles_to_skip=titles_to_skip,
+            dimensions_to_skip=dimensions_to_skip,
+            dimensions_validators=dimensions_validators,
+            heuristics=heuristics,
+            possible_row_offsets=[0],
+            lowest_nibbler_version="12.1.1",
+            highest_nibbler_version="12.1.1",
+        )
+        # if we have parser ID we want to PUT
+        if parser_id:
+            response = requests.put(
+                f"{url}{parser_id}/",
+                headers=self.headers,
+                json=parser_def.model_dump(mode="json"),
+                timeout=30,
+            )
+        else:   
+            response = requests.post(
+                url,
+                headers=self.headers,
+                json=parser_def.model_dump(mode="json"),
+                timeout=30,
+            )
+        logger.info(f"Parser definition created or updated: {response.json()}")
+        response.raise_for_status()
+        parser_id = response.json()["pk"]
+        return parser_id
 
 
 class DataDescriptionWorker(FlowWorker):
@@ -256,11 +294,46 @@ class DataDescriptionWorker(FlowWorker):
             instructions=get_data_description_prompt(),
             model="gpt-4o",
             output_type=DataDescriptionData,
+            tools=[self.fetch_all_metrics, self.fetch_all_dimensions],
         )
 
     @staticmethod
     def flow_worker_name():
         return "data_description_worker"
+
+    @function_tool
+    async def fetch_all_metrics() -> list[BrainMetric]:
+        """Fetch all available metrics from Brain API."""
+        url = "https://staging.brain.celus.net/knowledgebase/metrics/"
+        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
+        logger.info("Fetching all metrics")
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return [BrainMetric.model_validate(m) for m in response.json()]
+        except requests.HTTPError as http_err:
+            logger.error(f"HTTP error occurred: {http_err}")
+            raise
+        except Exception as err:
+            logger.error(f"An error occurred: {err}")
+            raise
+
+    @function_tool
+    async def fetch_all_dimensions() -> list[BrainDimension]:
+        """Fetch all available dimensions from Brain API."""
+        url = "https://staging.brain.celus.net/knowledgebase/dimensions/"
+        headers = {"Authorization": f"Token {os.environ.get('BRAIN_TOKEN')}"}
+        logger.info("Fetching all dimensions")
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return [BrainDimension.model_validate(d) for d in response.json()]
+        except requests.HTTPError as http_err:
+            logger.error(f"HTTP error occurred: {http_err}")
+            raise
+        except Exception as err:
+            logger.error(f"An error occurred: {err}")
+            raise
 
     async def run(
         self, file: FileData, user_info: UserInfoData
@@ -318,6 +391,13 @@ class TranslationWorker(FlowWorker):
         return {result.final_output}
 
 
+class GitlabIssueOutput(BaseModel):
+    """Combined output from GitLab issue parsing."""
+
+    platform: PlatformData
+    user_info: UserInfoData
+
+
 class GitlabWorker(FlowWorker):
     def __init__(self):
         self.agent = Agent(
@@ -325,7 +405,7 @@ class GitlabWorker(FlowWorker):
             handoff_description="Agent for fetching information from Gitlab issue.",
             instructions=get_gitlab_prompt(),
             model="gpt-4o",
-            output_type=PlatformData,
+            output_type=GitlabIssueOutput,
             tools=[self.fetch_all_platforms],
         )
 
@@ -353,7 +433,9 @@ class GitlabWorker(FlowWorker):
             logger.error(f"An error occurred: {err}")
             raise
 
-    async def run(self, user_info: UserInfoData) -> set[PlatformData | FileData]:
+    async def run(
+        self, user_info: UserInfoData
+    ) -> set[PlatformData | FileData | UserInfoData]:
         issue_iid = user_info.gitlab_issue
         if issue_iid is None:
             return {
@@ -376,12 +458,16 @@ class GitlabWorker(FlowWorker):
 
         # Run agent with issue content directly
         result = await Runner.run(self.agent, issue_content)
-        output = PlatformData.model_validate(result.final_output)
+
+        output = GitlabIssueOutput.model_validate(result.final_output)
+
+        platform_output = output.platform
+        user_info_output = output.user_info
 
         file_data = None
         paths = issue.get_file_paths()
         if paths:
-            # Take the first file for now
+            # Take the first file for now-TODO deal with more files(separate issues)
             filename = paths[0].split("/")[-1]
             file_path = os.path.join("uploaded_files", filename)
             if os.path.exists(file_path):
@@ -392,24 +478,29 @@ class GitlabWorker(FlowWorker):
                     logger.warning(f"Could not determine file format for {filename}")
 
         if file_data:
-            return {output, file_data}
-        return {output}
+            return {platform_output, user_info_output, file_data}
+        return {platform_output, user_info_output}
 
 
 class ParsingRulesWorker(FlowWorker):
+    # TODO interal parsing rules ID to allow for PUT requests
     @dataclass
     class Context:
         # necessary for sharing the information to the function tools, which cannot have self argument
         parser_definition: ParserDefinitionData | None = None
         parsed_data: ParsedData | None = None
         file_path: str | None = None
+        report_type_id: int | None = None
+        parser_id: int | None = None
 
     def __init__(self):
         self.agent = Agent[self.Context](
             name="Parsing Rules Agent",
             handoff_description="Specialist agent for parsing rules.",
             model="gpt-5.1",
-            model_settings=ModelSettings(reasoning={"effort": "medium"}),
+            model_settings=ModelSettings(
+                reasoning={"effort": "medium", "summary": "detailed"}
+            ),
             tools=[self.check_parsing_rules],
         )
         self.context = self.Context()
@@ -468,6 +559,11 @@ class ParsingRulesWorker(FlowWorker):
     ) -> bool | str:
         """Check whether the generated parser rules conform to the expected format."""
         dict_rules = json.loads(string_json_parsing_rules)
+        logger.info(f"Checking parsing rules: {dict_rules}")
+        # upload into brain
+        brain_client = BrainClient()
+        parser_id =brain_client.create_or_update_parser_definition(generated_rules=dict_rules, report_type_id=wrapper.context.report_type_id, parser_id=wrapper.context.parser_id)
+        wrapper.context.parser_id = parser_id
         # validate against parser definiton:
         try:
             ParserDefinitionData.model_validate(dict_rules)
@@ -493,6 +589,7 @@ class ParsingRulesWorker(FlowWorker):
         metrics_dimensions: MetricsDimensionsData,
         file: FileData,
         user_info: UserInfoData,
+        report_type: ReportTypeData,
     ) -> set[ParserDefinitionData, ParsedData]:
         metrics_for_llm = [
             (m.data_metric, m.brain_metric.short_name)
@@ -515,12 +612,12 @@ class ParsingRulesWorker(FlowWorker):
         logger.info("USER COMMENT: %s", user_info.user_comment)
         content = file.to_llm_format()
         self.context.file_path = file.path  # todo name more reasonably
+        self.context.report_type_id = report_type.pk
         await Runner.run(self.agent, content, context=self.context)
         return {self.context.parser_definition, self.context.parsed_data}
 
 
 FLOW_WORKERS: set[type[FlowWorker]] = {
-    PlatformAgentWorker,
     DataDescriptionWorker,
     ParsingRulesWorker,
     TranslationWorker,

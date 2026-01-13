@@ -7,6 +7,7 @@ from dataclasses import field
 import openpyxl
 import os
 from typing import Literal
+import datetime
 
 class Coord(BaseModel):
     """
@@ -273,6 +274,7 @@ class UserInfoData(FlowData):
     """
     user_comment: str | None = None
     gitlab_issue: int | None = None
+    source: str | None = None
 
     @staticmethod
     def flow_data_name():
@@ -358,6 +360,7 @@ class FileData(FlowData):
         for sheet in self.sheets:
             result += sheet.to_llm_format() + '\n\n'
         return result
+
     
 class TranslationData(FlowData):
     """
@@ -379,27 +382,6 @@ class Granularity(str, Enum):
     MONTHLY = "monthly"
     DAILY = "daily"
     OTHER = "other"
-
-class DataDescriptionData(FlowData):
-    """
-    FlowData for storing data description information.
-    This includes the start and end month/year, whether the data is in English,
-    whether the report has a title, the granularity of the data,
-    the title identifiers, and the metrics and dimensions.
-    """
-    begin_month_year: str
-    end_month_year: str
-    english: bool
-    title_report: bool
-    granularity: Granularity
-    title_identifiers : typing.List[TitleIdKind]
-    metrics: typing.List[str]
-    dimensions: typing.List[str]
-
-    @staticmethod
-    def flow_data_name():
-        return 'data_description_data'
-    #TODO add organizations
 
 class ParsedData(FlowData):
     """
@@ -445,9 +427,19 @@ class BrainDimension(BaseModel):
     short_name: str
     aliases: typing.List[str]
 
+
+class InterestGroupChoices(str, Enum):
+    FULL_TEXT = "full_text"
+    SEARCH = "search"
+    FULL_TEXT_DENIAL = "full_text_denial"
+    SEARCH_DENIAL = "search_denial"
+    OTHER = "other"
+    MULTIMEDIA = "multimedia"
+
 class MetricMapping(BaseModel):
     data_metric: str
     brain_metric: BrainMetric | None
+    interest_group: InterestGroupChoices | None
 
 class DimensionMapping(BaseModel):
     data_dimension: str
@@ -477,11 +469,37 @@ class MetricsDimensionsData(FlowData):
         )
         return "\n".join(lines)
 
+
 class MetricInterestGroup(BaseModel):
     metric: int
-    interest_group: str
+    interest_group: str | None
+
+
+class DataDescriptionData(FlowData):
+    """
+    FlowData for storing data description information.
+    This includes the start and end month/year, whether the data is in English,
+    whether the report has a title, the granularity of the data,
+    the title identifiers, and the metrics and dimensions.
+    """
+    begin_month_year: str
+    end_month_year: str
+    english: bool
+    title_report: bool
+    item_report: bool
+    granularity: Granularity
+    title_identifiers : typing.List[TitleIdKind]
+    metrics: list[MetricMapping]
+    dimensions: list[DimensionMapping]
+    organization: str | None = None
+
+    @staticmethod
+    def flow_data_name():
+        return 'data_description_data'
+
 
 class ReportTypeData(FlowData):
+    pk: int | None = None
     short_name: str
     name: str
     platforms: list[int]
@@ -494,6 +512,49 @@ class ReportTypeData(FlowData):
     def flow_data_name():
         return 'report_type_data'
 
+    def from_flow_data(metrics_dimensions_data: MetricsDimensionsData, platform_data: PlatformData, data_description_data: DataDescriptionData) -> 'ReportTypeData':
+        dimension_ids = [
+            dimension.brain_dimension.id
+            for dimension in metrics_dimensions_data.dimensions
+        ]
+        metrics_with_groups = [
+            {"metric": metric.brain_metric.id, "interest_group": metric.interest_group} for metric in metrics_dimensions_data.metrics
+        ]
+        return ReportTypeData(
+            pk=None,
+            short_name=f"{platform_data.short_name}-test",
+            name=f"{platform_data.name} Test",
+            platforms=[platform_data.pk],
+            dimensions=dimension_ids,
+            uses_titles=data_description_data.title_report,
+            uses_items=data_description_data.item_report,
+            metrics=metrics_with_groups,
+        )
 
-FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, UserInfoData, ParsedData, TranslationData, MetricsDimensionsData, ReportTypeData}
+    def to_gitlab_comment(self) -> str:
+        lines: list[str] = []
+        lines.append(f"### Report Type - {self.name}")
+        lines.append(f"https://staging.brain.celus.net/admin/knowledgebase/customreporttype/{self.pk}/")
+        return "\n".join(lines)
+
+
+class BrainParserDefinition(BaseModel):
+    kind: str #non_counter.generic
+    version: int
+    parser_name: str
+    report_type: int
+    areas: typing.Any
+    metrics_to_skip: typing.List[str]
+    titles_to_skip: typing.List[str]
+    dimensions_to_skip: typing.Dict[str, typing.Any]
+    dimensions_validators: typing.Any
+    heuristics: typing.Any
+    possible_row_offsets: typing.List[int]
+    lowest_nibbler_version: str
+    highest_nibbler_version: str
+
+
+
+FLOW_DATA: set[type[FlowData]] = {PlatformData, FileData, DataDescriptionData, ParserDefinitionData, 
+UserInfoData, ParsedData, TranslationData, MetricsDimensionsData, ReportTypeData}
 

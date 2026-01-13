@@ -6,24 +6,33 @@ import requests
 
 from base import Runtime
 from workers import FLOW_WORKERS, BrainClient
-from models import FLOW_DATA, FileData, FileFormat, PlatformData, UserInfoData, MetricsDimensionsData, DataDescriptionData
+from models import (
+    FLOW_DATA,
+    FileData,
+    FileFormat,
+    PlatformData,
+    UserInfoData,
+    MetricsDimensionsData,
+    DataDescriptionData,
+    ReportTypeData,
+)
 from utils.gitlab_client import GitLabClient
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-runtimes: dict[int, Runtime] = {} # Dictionary to store all runtimes
+runtimes: dict[int, Runtime] = {}  # Dictionary to store all runtimes
 
 app = FastAPI()
 
-app.add_middleware( # Middleware to handle CORS
+app.add_middleware(  # Middleware to handle CORS
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 def create_runtime():
     """
@@ -34,6 +43,7 @@ def create_runtime():
     session_id = max(list(runtimes.keys()), default=0) + 1
     runtimes[session_id] = Runtime()
     return session_id
+
 
 @app.post("/start_session")
 def start_session():
@@ -56,6 +66,7 @@ def get_runtime(session_id: int) -> Runtime:
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
+
 @app.post("/upload_file/{session_id}")
 async def upload_file(session_id: int, file: UploadFile = File(...)) -> dict:
     """
@@ -67,13 +78,20 @@ async def upload_file(session_id: int, file: UploadFile = File(...)) -> dict:
     runtime = get_runtime(session_id)
     try:
         file_location = f"uploaded_files/{file.filename}"
-        os.makedirs("uploaded_files", exist_ok=True) # create directory if it doesn't exist
+        os.makedirs(
+            "uploaded_files", exist_ok=True
+        )  # create directory if it doesn't exist
         with open(file_location, "wb") as buffer:
             buffer.write(await file.read())
-        runtime.set_state(FileData(path=file_location, format=FileFormat.from_file_extension(file.filename)))
+        runtime.set_state(
+            FileData(
+                path=file_location, format=FileFormat.from_file_extension(file.filename)
+            )
+        )
         return {"filename": file.filename, "message": "File uploaded successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 def get_flow_data(data_name: str):
     """
@@ -84,6 +102,7 @@ def get_flow_data(data_name: str):
             return t
     raise HTTPException(status_code=404, detail="Flow data not found")
 
+
 def get_flow_worker(worker_name: str):
     """
     Helper function to get flow worker by name.
@@ -92,6 +111,7 @@ def get_flow_worker(worker_name: str):
         if t.flow_worker_name() == worker_name:
             return t
     raise HTTPException(status_code=404, detail="Flow worker not found")
+
 
 @app.get("/state/{session_id}/{data_name}")
 async def get_state(session_id: int, data_name: str) -> dict:
@@ -132,11 +152,13 @@ async def call_worker(session_id: int, worker_name: str):
     await runtime.run(flow_worker())
     return {"message": f"Worker {worker_name} executed successfully."}
 
+
 @app.get("/metrics")
 async def get_brain_metrics():
     brain_client = BrainClient()
     metrics = brain_client.get_metrics()
     return metrics
+
 
 @app.get("/dimensions")
 async def get_brain_dimensions():
@@ -144,11 +166,12 @@ async def get_brain_dimensions():
     dimensions = brain_client.get_dimensions()
     return dimensions
 
+
 @app.get("/submit_platform/{session_id}")
 async def submit_platform(session_id: int):
     runtime = get_runtime(session_id)
-    platform_data = runtime.get_state('platform_data', PlatformData)
-    user_info_data = runtime.get_state('user_info_data', UserInfoData)
+    platform_data = runtime.get_state("platform_data", PlatformData)
+    user_info_data = runtime.get_state("user_info_data", UserInfoData)
     brain_client = BrainClient()
     # Create platform in Brain if needed and store updated state (exists/id)
     try:
@@ -166,24 +189,48 @@ async def submit_platform(session_id: int):
         raise HTTPException(status_code=400, detail={"error": str(e)})
     runtime.set_state(platform_data)
     gitlab_client = GitLabClient(
-            token=os.environ.get("GITLAB_API_TOKEN"),
-            project_id=os.environ.get("GITLAB_PROJECT_ID")
-        )
-    gitlab_client.add_issue_comment(user_info_data.gitlab_issue, platform_data.to_gitlab_comment())
+        token=os.environ.get("GITLAB_API_TOKEN"),
+        project_id=os.environ.get("GITLAB_PROJECT_ID"),
+    )
+    gitlab_client.add_issue_comment(
+        user_info_data.gitlab_issue, platform_data.to_gitlab_comment()
+    )
+
 
 @app.post("/submit_metrics_dimensions/{session_id}")
 async def process_metrics_dimensions(session_id: int):
     runtime = get_runtime(session_id)
-    metrics_dimensions_data = runtime.get_state('metrics_dimensions_data', MetricsDimensionsData)
-    user_info_data = runtime.get_state('user_info_data', UserInfoData)
+    metrics_dimensions_data = runtime.get_state(
+        "metrics_dimensions_data", MetricsDimensionsData
+    )
+    user_info_data = runtime.get_state("user_info_data", UserInfoData)
     brain_client = BrainClient()
-    metrics_dimensions_data = brain_client.process_metrics_dimensions(metrics_dimensions_data)
+    metrics_dimensions_data = brain_client.process_metrics_dimensions(
+        metrics_dimensions_data
+    )
     runtime.set_state(metrics_dimensions_data)
     gitlab_client = GitLabClient(
-            token=os.environ.get("GITLAB_API_TOKEN"),
-            project_id=os.environ.get("GITLAB_PROJECT_ID")
-        )
-    gitlab_client.add_issue_comment(user_info_data.gitlab_issue,metrics_dimensions_data.to_gitlab_comment())
-    platform_data = runtime.get_state('platform_data', PlatformData)
-    data_description_data = runtime.get_state('data_description_data', DataDescriptionData)
-    brain_client.create_report_type(metrics_dimensions_data, platform_data, data_description_data)
+        token=os.environ.get("GITLAB_API_TOKEN"),
+        project_id=os.environ.get("GITLAB_PROJECT_ID"),
+    )
+    gitlab_client.add_issue_comment(
+        user_info_data.gitlab_issue, metrics_dimensions_data.to_gitlab_comment()
+    )
+    platform_data = runtime.get_state("platform_data", PlatformData)
+    data_description_data = runtime.get_state(
+        "data_description_data", DataDescriptionData
+    )
+    report_type_data = ReportTypeData.from_flow_data(
+        metrics_dimensions_data, platform_data, data_description_data
+    )
+
+    runtime.set_state(report_type_data)
+    report_type_data = brain_client.create_report_type(report_type_data)
+    runtime.set_state(report_type_data)
+    gitlab_client.add_issue_comment(
+        user_info_data.gitlab_issue, report_type_data.to_gitlab_comment()
+    )
+    file_data = runtime.get_state("file_data", FileData)
+    brain_client.upload_input_sample(
+        file_data, platform_data, data_description_data, user_info_data
+    )

@@ -5,7 +5,7 @@
       <StepItem value="1">
         <Step>Input, Platform</Step>
         <StepPanel v-slot="{ activateCallback }">
-          <Card style="width: 50rem; overflow: hidden">
+          <Card style="width: 60rem; overflow: hidden">
             <template #title>Input, Platform</template>
             <template #subtitle
               >Fill in the Gitlab issue number to automatically downloand the sample file, detect platform and customer
@@ -14,7 +14,7 @@
             <template #content>
               <div class="flex items-center gap-2">
                 <span>Gitlab Issue ID (without #): </span>
-                <InputText v-model="gitlabIssue" style="width: 200px" />
+                <InputNumber v-model="userInfo.gitlab_issue" style="width: 200px" :useGrouping="false" />
                 <Button label="Fill from issue" @click="() => fillFromGitlab()" severity="info" />
               </div>
               <div v-if="stepNumber >= 2">
@@ -26,7 +26,7 @@
                       <span class="font-bold"
                         >Note (any infofrom the customer, want to take into account for processing):</span
                       >
-                      <Textarea v-model="userComment" rows="4" cols="65" />
+                      <Textarea v-model="userInfo.user_comment" rows="4" cols="65" />
                     </div>
                     <div>
                       <span class="font-bold">GItlab Issue:</span>
@@ -36,7 +36,7 @@
                         rel="noopener noreferrer"
                         class="text-blue-600 hover:underline"
                       >
-                        #{{ gitlabIssue }}
+                        #{{ userInfo.gitlab_issue }}
                       </a>
                     </div>
                     <div>
@@ -44,6 +44,7 @@
                       <span v-if="selectedFileName" class="text-green-600 ml-1">✓</span>
                       <span v-else>-</span>
                     </div>
+                    <div><span class="font-bold">Source:</span> {{ userInfo.source }}</div>
                   </template>
                 </Card>
 
@@ -145,11 +146,7 @@
                           severity="info"
                           class="self-start"
                           :disabled="
-                            !existingPlatformInfo.name ||
-                            !existingPlatformInfo.short_name ||
-                            !existingPlatformInfo.pk ||
-                            !existingPlatformInfo.provider ||
-                            !existingPlatformInfo.url
+                            !existingPlatformInfo.name || !existingPlatformInfo.short_name || !existingPlatformInfo.pk
                           "
                         />
                       </div>
@@ -167,7 +164,7 @@
       <StepItem value="2">
         <Step>Metrics,Dimensions,Report Type</Step>
         <StepPanel v-slot="{ activateCallback }">
-          <Card style="width: 50rem; overflow: hidden">
+          <Card style="width: 60rem; overflow: hidden">
             <template #title>Metrics,Dimensions,Report Type</template>
             <template #content>
               <div class="data-description" v-if="dataDescriptionState == 'done'">
@@ -178,7 +175,9 @@
                 </div>
 
                 <div class="!bg-white !border !border-slate-200 !rounded-xl p-6">
-                  <div class="font-bold text-lg mb-2">Received Data File</div>
+                  <Divider align="center" type="solid">
+                    <b class="text-lg">Data File</b>
+                  </Divider>
                   <div class="flex flex-col gap-2">
                     <div class="flex items-center gap-2">
                       <span>Start month year: </span>
@@ -254,140 +253,162 @@
                   </div>
 
                   <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <div class="font-bold text-lg mb-2 mt-4">Metrics</div>
-                      Here you can .... map
-                      <DataTable
-                        :value="metricMappings"
-                        dataKey="id"
-                        size="small"
-                        stripedRows
-                        style="width: 100%"
-                        :tableStyle="{ tableLayout: 'fixed' }"
-                        :emptyMessage="'No metrics yet'"
-                      >
-                        <Column header="Data metric" style="width: 14rem">
-                          <template #body="{ data }">
-                            <Select
-                              class="cell-select-wrap"
-                              v-model="data.dataMetric"
-                              :options="availableDataValues"
-                              placeholder="Pick data metric/dimension"
-                              appendTo="body"
-                              scrollHeight="18rem"
-                              :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
-                              filter
-                              editable
-                              filterPlaceholder="Search data columns/rows..."
-                              style="width: 100%"
-                            />
-                          </template>
-                        </Column>
-                        <Column header="Brain metric">
-                          <template #body="{ data }">
-                            <Select
-                              class="cell-select-wrap"
-                              v-model="data.brainMetric"
-                              :options="brainMetricOptions"
-                              optionLabel="label"
-                              optionValue="value"
-                              placeholder="Pick brain metric"
-                              appendTo="body"
-                              scrollHeight="18rem"
-                              :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
-                              filter
-                              filterBy="label"
-                              filterPlaceholder="Search brain metrics..."
-                              style="width: 100%"
-                            />
-                          </template>
-                        </Column>
-                        <Column header="Actions" style="width: 6rem">
-                          <template #body="{ data }">
-                            <Button icon="pi pi-trash" severity="danger" text @click="() => deleteMetricRow(data.id)" />
-                          </template>
-                        </Column>
-                      </DataTable>
-                      <div style="padding-top: 8px">
-                        <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addMetricRow" />
-                      </div>
-                    </FloatLabel>
+                    <Divider align="center" type="solid">
+                      <b class="text-lg">Metrics</b>
+                    </Divider>
+
+                    Here you can .... map
+                    <DataTable
+                      :value="descriptionData.metrics"
+                      size="small"
+                      stripedRows
+                      style="width: 100%"
+                      :tableStyle="{ tableLayout: 'fixed' }"
+                      :emptyMessage="'No metrics yet'"
+                    >
+                      <Column header="File column,row" style="width: 14rem">
+                        <template #body="{ data }">
+                          <Select
+                            class="cell-select-wrap"
+                            :modelValue="data.data_metric"
+                            @update:modelValue="(value) => (data.data_metric = value)"
+                            :options="availableDataValues"
+                            placeholder="Pick data metric/dimension"
+                            appendTo="body"
+                            scrollHeight="18rem"
+                            :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
+                            filter
+                            editable
+                            filterPlaceholder="Search data columns/rows..."
+                            style="width: 100%"
+                          />
+                        </template>
+                      </Column>
+                      <Column header="Brain metric">
+                        <template #body="{ data }">
+                          <Select
+                            class="cell-select-wrap"
+                            :modelValue="getBrainMetricShortName(data)"
+                            @update:modelValue="(value) => setBrainMetricShortName(data, value)"
+                            :options="brainMetricOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder=""
+                            appendTo="body"
+                            scrollHeight="18rem"
+                            :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
+                            filter
+                            editable
+                            filterBy="label"
+                            filterPlaceholder="Search brain metrics or type custom name..."
+                            style="width: 100%"
+                          />
+                        </template>
+                      </Column>
+                      <Column header="Interest Group">
+                        <template #body="{ data }">
+                          <Select
+                            class="cell-select-wrap"
+                            v-model="data.interest_group"
+                            :options="interestGroupOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder=""
+                            appendTo="body"
+                            scrollHeight="18rem"
+                            :panelStyle="{ width: '20rem', maxWidth: 'calc(100vw - 2rem)' }"
+                            filter
+                            filterBy="label"
+                            filterPlaceholder="Search interest groups..."
+                            style="width: 100%"
+                          />
+                        </template>
+                      </Column>
+                      <Column header="" style="width: 4rem">
+                        <template #body="{ data }">
+                          <Button icon="pi pi-times" severity="info" text @click="() => deleteMetricRow(data)" />
+                        </template>
+                      </Column>
+                    </DataTable>
+                    <div style="padding-top: 8px">
+                      <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addMetricRow" />
+                    </div>
                   </div>
                   <div style="padding-bottom: 10px">
-                    <FloatLabel variant="on">
-                      <div style="font-weight: 600; padding-bottom: 6px">Dimensions</div>
-                      <DataTable
-                        :value="dimensionMappings"
-                        dataKey="id"
-                        size="small"
-                        stripedRows
-                        style="width: 100%"
-                        :tableStyle="{ tableLayout: 'fixed' }"
-                        :emptyMessage="'No dimensions yet'"
-                      >
-                        <Column header="Data dimension" style="width: 14rem">
-                          <template #body="{ data }">
-                            <Select
-                              class="cell-select-wrap"
-                              v-model="data.dataDimension"
-                              :options="availableDataValues"
-                              placeholder="Pick data metric/dimension"
-                              appendTo="body"
-                              scrollHeight="18rem"
-                              :panelStyle="{ width: '20rem', maxWidth: 'calc(100vw - 2rem)' }"
-                              filter
-                              editable
-                              filterPlaceholder="Search data metric/dimension..."
-                              style="width: 100%"
-                            />
-                          </template>
-                        </Column>
-                        <Column header="Brain dimension">
-                          <template #body="{ data }">
-                            <Select
-                              class="cell-select-wrap"
-                              v-model="data.brainDimension"
-                              :options="brainDimensionOptions"
-                              optionLabel="label"
-                              optionValue="value"
-                              placeholder="Pick brain dimension"
-                              appendTo="body"
-                              scrollHeight="18rem"
-                              :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
-                              filter
-                              filterBy="label"
-                              filterPlaceholder="Search brain dimensions..."
-                              style="width: 100%"
-                            />
-                          </template>
-                        </Column>
-                        <Column header="Actions" style="width: 6rem">
-                          <template #body="{ data }">
-                            <Button
-                              icon="pi pi-trash"
-                              severity="danger"
-                              text
-                              @click="() => deleteDimensionRow(data.id)"
-                            />
-                          </template>
-                        </Column>
-                      </DataTable>
-                      <div style="padding-top: 8px">
-                        <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addDimensionRow" />
-                      </div>
-                    </FloatLabel>
+                    <Divider align="center" type="solid">
+                      <b class="text-lg">Dimensions</b>
+                    </Divider>
+                    Here you can .... map
+                    <DataTable
+                      :value="descriptionData.dimensions"
+                      size="small"
+                      stripedRows
+                      style="width: 100%"
+                      :tableStyle="{ tableLayout: 'fixed' }"
+                      :emptyMessage="'No dimensions yet'"
+                    >
+                      <Column header="File column,row" style="width: 14rem">
+                        <template #body="{ data }">
+                          <Select
+                            class="cell-select-wrap"
+                            :modelValue="data.data_dimension"
+                            @update:modelValue="(value) => (data.data_dimension = value)"
+                            :options="availableDataValues"
+                            placeholder=""
+                            appendTo="body"
+                            scrollHeight="18rem"
+                            :panelStyle="{ width: '20rem', maxWidth: 'calc(100vw - 2rem)' }"
+                            filter
+                            editable
+                            filterPlaceholder="Search data metric/dimension..."
+                            style="width: 100%"
+                          />
+                        </template>
+                      </Column>
+                      <Column header="Brain dimension">
+                        <template #body="{ data }">
+                          <Select
+                            class="cell-select-wrap"
+                            :modelValue="getBrainDimensionShortName(data)"
+                            @update:modelValue="(value) => setBrainDimensionShortName(data, value)"
+                            :options="brainDimensionOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder=""
+                            appendTo="body"
+                            scrollHeight="18rem"
+                            :panelStyle="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
+                            filter
+                            editable
+                            filterBy="label"
+                            filterPlaceholder="Search brain dimensions or type custom name..."
+                            style="width: 100%"
+                          />
+                        </template>
+                      </Column>
+                      <Column header="" style="width: 4rem">
+                        <template #body="{ data }">
+                          <Button icon="pi pi-times" severity="info" text @click="() => deleteDimensionRow(data)" />
+                        </template>
+                      </Column>
+                    </DataTable>
+                    <div style="padding-top: 8px">
+                      <Button icon="pi pi-plus" label="Add" severity="secondary" @click="addDimensionRow" />
+                    </div>
                   </div>
+                  <Divider />
                   <div>
-                    <Button label="Submit Metrics and Dimensions" @click="() => submitMetricsAndDimensions()" />
+                    <Button
+                      severity="info"
+                      label="Submit Data and Proceed to Parsing"
+                      @click="() => submitMetricsAndDimensions()"
+                    />
+                    <Button
+                      severity="info"
+                      label="Proceed to Parsing"
+                      @click="() => generateParsingRules(activateCallback)"
+                    />
                   </div>
-                </div>
-              </div>
-            </template>
-            <template #footer>
-              <div v-if="dataDescriptionState == 'done'">
-                Please make changes if needed. Do you want to use this data description to generate the parsing rules?
-                <div>
-                  <Button label="Generate Parsing Rules" @click="() => generateParsingRules(activateCallback)" />
                 </div>
               </div>
             </template>
@@ -439,6 +460,8 @@ import Stepper from 'primevue/stepper'
 import StepItem from 'primevue/stepitem'
 import Step from 'primevue/step'
 import StepPanel from 'primevue/steppanel'
+import Divider from 'primevue/divider'
+import DatePicker from 'primevue/datepicker'
 
 import {
   axios_client,
@@ -467,6 +490,18 @@ interface PlatformData {
   pk: number | null
 }
 
+interface UserInfoData {
+  user_comment: string | null
+  gitlab_issue: number | null
+  source: string | null
+}
+
+const userInfo = ref<UserInfoData>({
+  user_comment: null,
+  gitlab_issue: null,
+  source: null,
+})
+
 const platformInfo = reactive<PlatformData>({
   name: '',
   provider: '',
@@ -494,15 +529,24 @@ const existingPlatformInfo = reactive<PlatformData>({
   pk: 0,
 })
 
-const userComment = ref('') //user input - any comment
 const platformError = ref('')
 const file = ref<File | null>(null)
 const selectedFileName = ref('')
-const gitlabIssue = ref('')
-const gitlabIssueUrl = computed(() => `https://gitlab.com/big-dig-data/celus/-/issues/${gitlabIssue.value}`)
+const gitlabIssueUrl = computed(() =>
+  userInfo.value.gitlab_issue ? `https://gitlab.com/big-dig-data/celus/-/issues/${userInfo.value.gitlab_issue}` : '',
+)
 
 const titleIdentifierOptions: string[] = ['Print_ISSN', 'Online_ISSN', 'ISBN', 'DOI', 'URI', 'Proprietary']
 const granularityOptions: string[] = ['daily', 'monthly', 'other']
+
+const interestGroupOptions = [
+  { label: 'Full Text', value: 'full_text' },
+  { label: 'Search', value: 'search' },
+  { label: 'Full Text Denial', value: 'full_text_denial' },
+  { label: 'Search Denial', value: 'search_denial' },
+  { label: 'Other', value: 'other' },
+  { label: 'Multimedia', value: 'multimedia' },
+]
 
 const parsingRules = ref('') // JSON string of the parsing rules
 
@@ -519,10 +563,12 @@ interface DataDescriptionData {
   end_month_year: string
   english: boolean
   title_report: boolean
+  item_report: boolean
+  organization: string | null
   granularity: string
   title_identifiers: string[]
-  metrics: string[]
-  dimensions: string[]
+  metrics: MetricMapping[]
+  dimensions: DimensionMapping[]
 }
 
 const descriptionData = reactive<DataDescriptionData>({
@@ -530,23 +576,20 @@ const descriptionData = reactive<DataDescriptionData>({
   end_month_year: '',
   english: false,
   title_report: false,
+  item_report: false,
+  organization: null,
   granularity: '',
   title_identifiers: [],
   metrics: [],
   dimensions: [],
 })
 
-// Simplified metric and dimension mappings - single source of truth
-const metricMappings = ref<MetricMapping[]>([])
-const dimensionMappings = ref<DimensionMapping[]>([])
-
 // Auto-incrementing ID counter for table rows (frontend only)
 let nextRowId = 0
 
 // Available options for dropdown (union of metrics and dimensions from file)
-const availableDataValues = computed(() => {
-  return [...new Set([...descriptionData.metrics, ...descriptionData.dimensions])]
-})
+// This is a fixed set that doesn't change when rows are deleted
+const availableDataValues = ref<string[]>([])
 
 const brainMetrics = ref<BrainMetric[]>([])
 const brainMetricOptions = computed(() =>
@@ -584,30 +627,79 @@ const deepOmitNulls = (value: any): any => {
   return value
 }
 
-// Simple add/delete functions for metric mappings
-const addMetricRow = () => {
-  metricMappings.value.push({
-    id: nextRowId++,
-    dataMetric: '',
-    brainMetric: '',
-  })
+// Helper functions to get/set brain metric short_name for UI
+const getBrainMetricShortName = (mapping: MetricMapping): string => {
+  return mapping.brain_metric?.short_name || ''
 }
 
-const deleteMetricRow = (id: number) => {
-  metricMappings.value = metricMappings.value.filter((m) => m.id !== id)
+const setBrainMetricShortName = (mapping: MetricMapping, shortName: string) => {
+  if (shortName) {
+    const brainMetric = brainMetrics.value.find((m) => m.short_name === shortName)
+    if (brainMetric) {
+      // Found existing metric - use full object with real id
+      mapping.brain_metric = brainMetric
+    } else {
+      // Custom name - create object with id: 0 as sentinel for "create new"
+      mapping.brain_metric = { id: 0, short_name: shortName, aliases: [] } as any
+    }
+  } else {
+    mapping.brain_metric = null
+  }
+}
+
+// Helper functions to get/set brain dimension short_name for UI
+const getBrainDimensionShortName = (mapping: DimensionMapping): string => {
+  return mapping.brain_dimension?.short_name || ''
+}
+
+const setBrainDimensionShortName = (mapping: DimensionMapping, shortName: string) => {
+  if (shortName) {
+    const brainDimension = brainDimensions.value.find((d) => d.short_name === shortName)
+    if (brainDimension) {
+      // Found existing dimension - use full object with real id
+      mapping.brain_dimension = brainDimension
+    } else {
+      // Custom name - create object with id: 0 as sentinel for "create new"
+      mapping.brain_dimension = { id: 0, short_name: shortName, aliases: [] } as any
+    }
+  } else {
+    mapping.brain_dimension = null
+  }
+}
+
+// Simple add/delete functions for metric mappings
+const addMetricRow = () => {
+  const newMapping: MetricMapping = {
+    id: nextRowId++,
+    data_metric: '',
+    brain_metric: null,
+    interest_group: null,
+  }
+  descriptionData.metrics.push(newMapping)
+}
+
+const deleteMetricRow = (mapping: MetricMapping) => {
+  const index = descriptionData.metrics.indexOf(mapping)
+  if (index > -1) {
+    descriptionData.metrics.splice(index, 1)
+  }
 }
 
 // Simple add/delete functions for dimension mappings
 const addDimensionRow = () => {
-  dimensionMappings.value.push({
+  const newMapping: DimensionMapping = {
     id: nextRowId++,
-    dataDimension: '',
-    brainDimension: '',
-  })
+    data_dimension: '',
+    brain_dimension: null,
+  }
+  descriptionData.dimensions.push(newMapping)
 }
 
-const deleteDimensionRow = (id: number) => {
-  dimensionMappings.value = dimensionMappings.value.filter((d) => d.id !== id)
+const deleteDimensionRow = (mapping: DimensionMapping) => {
+  const index = descriptionData.dimensions.indexOf(mapping)
+  if (index > -1) {
+    descriptionData.dimensions.splice(index, 1)
+  }
 }
 
 const generateParsingRules = async (activateCallback: (step: string) => void) => {
@@ -616,14 +708,8 @@ const generateParsingRules = async (activateCallback: (step: string) => void) =>
   activateCallback('3')
   console.log('Generating parsing rules for platform:', platformInfo.name)
 
-  // Extract just the data metric/dimension names as simple string arrays for backend
-  const dataDescriptionForBackend = {
-    ...descriptionData,
-    metrics: metricMappings.value.map((m) => m.dataMetric),
-    dimensions: dimensionMappings.value.map((d) => d.dataDimension),
-  }
+  // Remove frontend-only id fields before sending to backend
 
-  await setState(sessionId.value, 'data_description_data', dataDescriptionForBackend)
   await callWorker(sessionId.value, 'parsing_rules_worker')
   const newParsingRules = await getState(sessionId.value, 'parser_definition_data')
   if (newParsingRules == null) {
@@ -638,11 +724,6 @@ const generateParsingRules = async (activateCallback: (step: string) => void) =>
   console.log('Parsed data:', parsedData)
 }
 
-const onFileSelect = (event: { files: File[] }) => {
-  console.log('File selected:', event.files[0])
-  file.value = event.files[0] // Store the selected file
-  selectedFileName.value = event.files[0]?.name || ''
-}
 
 const processPlatform = async (activateCallback: (step: string) => void, platformData: PlatformData) => {
   platformError.value = ''
@@ -650,14 +731,10 @@ const processPlatform = async (activateCallback: (step: string) => void, platfor
   // go to second step in stepper
   console.log('Processing platform:', platformData.name)
 
-  // update user comment - TODO (+ do not forget gitlab issue)
-  //await setState(sessionId.value, 'user_info_data', {
-  //  user_comment: userComment.value,
-  //})
-
   // update platform data
   console.log('Updating platform data:', platformData)
   try {
+    await setState(sessionId.value, 'user_info_data', { ...userInfo.value })
     await setState(sessionId.value, 'platform_data', { ...platformData })
     //dunno about the file
     await axios_client.get(`submit_platform/${sessionId.value}`) //submit platform to gitlab
@@ -672,27 +749,25 @@ const processPlatform = async (activateCallback: (step: string) => void, platfor
 
 const submitMetricsAndDimensions = async () => {
   // Backend expects snake_case keys and nested BrainMetric/BrainDimension objects (or null).
-  // Our table stores brainMetric/brainDimension as selected short_name strings, so we look up full objects.
-  const brainMetricByShortName = new Map(brainMetrics.value.map((m) => [m.short_name, m]))
-  const brainDimensionByShortName = new Map(brainDimensions.value.map((d) => [d.short_name, d]))
+  // Remove frontend-only id fields before sending to backend
 
+  //update data description data
+  await setState(sessionId.value, 'data_description_data', descriptionData)
+  //update metrics dimensions data
   const payload = {
-    metrics: metricMappings.value.map((m) => {
-      const selected = m.brainMetric ? brainMetricByShortName.get(m.brainMetric) : undefined
-      return {
-        data_metric: m.dataMetric,
-        brain_metric: selected ? { id: selected.id, short_name: selected.short_name, aliases: selected.aliases } : null,
-      }
-    }),
-    dimensions: dimensionMappings.value.map((d) => {
-      const selected = d.brainDimension ? brainDimensionByShortName.get(d.brainDimension) : undefined
-      return {
-        data_dimension: d.dataDimension,
-        brain_dimension: selected
-          ? { id: selected.id, short_name: selected.short_name, aliases: selected.aliases }
-          : null,
-      }
-    }),
+    metrics: descriptionData.metrics.map(({ id, ...m }) => ({
+      data_metric: m.data_metric,
+      brain_metric: m.brain_metric
+        ? { id: m.brain_metric.id, short_name: m.brain_metric.short_name, aliases: m.brain_metric.aliases }
+        : null,
+      interest_group: m.interest_group || null,
+    })),
+    dimensions: descriptionData.dimensions.map(({ id, ...d }) => ({
+      data_dimension: d.data_dimension,
+      brain_dimension: d.brain_dimension
+        ? { id: d.brain_dimension.id, short_name: d.brain_dimension.short_name, aliases: d.brain_dimension.aliases }
+        : null,
+    })),
   }
 
   await setState(sessionId.value, 'metrics_dimensions_data', payload)
@@ -702,19 +777,16 @@ const submitMetricsAndDimensions = async () => {
 }
 
 const fillFromGitlab = async () => {
-  if (!gitlabIssue.value) {
+  if (!userInfo.value.gitlab_issue) {
     console.error('No GitLab issue number provided')
     return
   }
 
   platformState.value = 'loading'
-  console.log('Filling platform info from GitLab issue:', gitlabIssue.value)
+  console.log('Filling platform info from GitLab issue:', userInfo.value.gitlab_issue)
 
   // Update user_info_data with both comment and GitLab issue number
-  await setState(sessionId.value, 'user_info_data', {
-    user_comment: userComment.value,
-    gitlab_issue: Number(gitlabIssue.value),
-  })
+  await setState(sessionId.value, 'user_info_data', { ...userInfo.value })
 
   // Call Gitlab worker to fetch platform info from the issue
   await callWorker(sessionId.value, 'gitlab_worker')
@@ -743,47 +815,25 @@ const fillFromGitlab = async () => {
     file.value = null
   }
 
+  userInfo.value = await getState(sessionId.value, 'user_info_data')
+  console.log('User info from GitLab:', userInfo)
+
   stepNumber.value = 2
 }
 
-const sendFile = async () => {
-  if (!file.value) {
-    return
-  }
-
-  const formData = new FormData()
-  formData.append('file', file.value)
-
-  try {
-    const response = await axios_client.post(`upload_file/${sessionId.value}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
-  } catch (error) {
-    console.error('Error uploading file:', error)
-  }
-}
 
 const generateDescription = async () => {
   dataDescriptionState.value = 'loading'
   await callWorker(sessionId.value, 'data_description_worker')
   const newDataDescription = await getState(sessionId.value, 'data_description_data')
+
+  // Store the fixed set of available data values before any modifications
+  const metricNames = (newDataDescription.metrics || []).map((m: MetricMapping) => m.data_metric)
+  const dimensionNames = (newDataDescription.dimensions || []).map((d: DimensionMapping) => d.data_dimension)
+  availableDataValues.value = [...new Set([...metricNames, ...dimensionNames])]
+
+  // Assign all fields including metrics and dimensions
   Object.assign(descriptionData, newDataDescription)
-
-  // Populate metric mappings from backend data (generate simple IDs on frontend)
-  metricMappings.value = (newDataDescription.metrics || []).map((metricName: string) => ({
-    id: nextRowId++,
-    dataMetric: metricName,
-    brainMetric: '',
-  }))
-
-  // Populate dimension mappings from backend data (generate simple IDs on frontend)
-  dimensionMappings.value = (newDataDescription.dimensions || []).map((dimensionName: string) => ({
-    id: nextRowId++,
-    dataDimension: dimensionName,
-    brainDimension: '',
-  }))
 
   dataDescriptionState.value = 'done'
 }

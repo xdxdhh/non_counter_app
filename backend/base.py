@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Any, TypeVar, cast
 import logging
 from pydantic import BaseModel
+import os
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,19 +63,28 @@ class Runtime:
     """
     def __init__(self) -> None:
         self.state: dict[str, FlowData] = {}
-        logging.info("Runtime initialized.")
+        self.folder_path = "history"
+        self.gitlab_issue = None
+        os.makedirs(self.folder_path, exist_ok=True)
+        logger.info("Runtime initialized.")
 
     def set_state(self, data: FlowData):
         self.state[data.flow_data_name()] = data
-        logging.info(f"State set: {data.flow_data_name()}")
-        logging.info(f"Current states: {self.state}")
+        if self.gitlab_issue is None and data.flow_data_name() == "user_info_data":
+            self.gitlab_issue = data.gitlab_issue
+            os.makedirs(os.path.join(self.folder_path, str(self.gitlab_issue)), exist_ok=True)
+        logger.info(f"State set: {data.flow_data_name()}")
+        #Save the state to file in history folder
+        with open(os.path.join(self.folder_path, str(self.gitlab_issue), f"{data.flow_data_name()}.json"), "w") as f:
+            json.dump(data.model_dump(), f, default=str)
+        logger.info(f"State saved to {data.flow_data_name()}.json")
 
     def get_state(self, name: str, _: type[T]) -> T:
         return cast(T, self.state[name])
 
     async def run(self, worker: FlowWorker):
-        logging.info(f"Running {worker.flow_worker_name()}")
-        logging.info(f"This worker needs {worker.input_data} input data.")
+        logger.info(f"Running {worker.flow_worker_name()}")
+        logger.info(f"This worker needs {worker.input_data} input data.")
         args = []
 
         for input in worker.input_data:
@@ -82,6 +93,6 @@ class Runtime:
         result: set[FlowData] = await worker.run(*args)
 
         for r in result:
-            self.state[r.flow_data_name()] = r
+            self.set_state(r)
 
-        logging.info(f"Run finished, states: {self.state}")
+        logger.info(f"Run finished, states: {self.state}")
