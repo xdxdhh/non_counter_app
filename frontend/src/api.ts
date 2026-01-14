@@ -1,10 +1,9 @@
 import axios from 'axios'
 
 const axios_client = axios.create({
-  baseURL: 'http://127.0.0.1:8000/',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/',
 })
 
-/** DRF validation error format: { field_name: ["error message", ...], ... } */
 type DRFValidationError = Record<string, string[]>
 
 /** FastAPI wraps errors in { detail: ... } */
@@ -70,6 +69,63 @@ const callWorker = async (sessionId: number, workerName: string) => {
     console.error('Error calling worker:', error)
     throw error
   }
+}
+
+interface ProgressUpdate {
+  current: number
+  total: number
+  message: string
+  done?: boolean
+  error?: string
+}
+
+const callWorkerWithProgress = async (
+  sessionId: number,
+  workerName: string,
+  onProgress: (progress: ProgressUpdate) => void
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const eventSource = new EventSource(`http://127.0.0.1:8000/worker/${sessionId}/${workerName}/stream`)
+    let hasResolved = false
+
+    eventSource.onmessage = (event) => {
+      try {
+        const progress: ProgressUpdate = JSON.parse(event.data)
+        onProgress(progress)
+
+        if (progress.done) {
+          if (!hasResolved) {
+            hasResolved = true
+            eventSource.close()
+            if (progress.error) {
+              reject(new Error(progress.error))
+            } else {
+              resolve()
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing progress event:', error)
+        // Don't close on parse errors, just log them
+      }
+    }
+
+    eventSource.onerror = (error) => {
+      // Check if connection is closed
+      if (eventSource.readyState === EventSource.CLOSED) {
+        if (!hasResolved) {
+          hasResolved = true
+          console.error('EventSource closed unexpectedly')
+          eventSource.close()
+          reject(new Error('Stream connection closed unexpectedly'))
+        }
+      } else if (eventSource.readyState === EventSource.CONNECTING) {
+        // Still connecting, don't reject yet
+        console.warn('EventSource reconnecting...')
+      }
+      // If readyState is OPEN, it might be a transient error, don't close
+    }
+  })
 }
 
 
@@ -138,4 +194,5 @@ const getBrainDimensions = async () => {
   }
 }
 
-export { axios_client, getState, setState, callWorker, getBrainMetrics, getBrainDimensions }
+export { axios_client, getState, setState, callWorker, callWorkerWithProgress, getBrainMetrics, getBrainDimensions }
+export type { ProgressUpdate }

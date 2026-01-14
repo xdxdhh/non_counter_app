@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import os
 import logging
 import requests
+import json
 
 from base import Runtime
 from workers import FLOW_WORKERS, BrainClient
@@ -66,33 +68,6 @@ def get_runtime(session_id: int) -> Runtime:
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
-
-@app.post("/upload_file/{session_id}")
-async def upload_file(session_id: int, file: UploadFile = File(...)) -> dict:
-    """
-    Upload a file, store it in the server and update current state.
-    The file is stored in the 'uploaded_files' directory.
-    The session ID is used to get the correct runtime instance.
-    The file name is used to create a new FileData instance, which is stored in the runtime state.
-    """
-    runtime = get_runtime(session_id)
-    try:
-        file_location = f"uploaded_files/{file.filename}"
-        os.makedirs(
-            "uploaded_files", exist_ok=True
-        )  # create directory if it doesn't exist
-        with open(file_location, "wb") as buffer:
-            buffer.write(await file.read())
-        runtime.set_state(
-            FileData(
-                path=file_location, format=FileFormat.from_file_extension(file.filename)
-            )
-        )
-        return {"filename": file.filename, "message": "File uploaded successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 def get_flow_data(data_name: str):
     """
     Helper function to get flow data by name.
@@ -153,6 +128,62 @@ async def call_worker(session_id: int, worker_name: str):
     return {"message": f"Worker {worker_name} executed successfully."}
 
 
+@app.get("/worker/{session_id}/{worker_name}/stream")
+async def call_worker_stream(session_id: int, worker_name: str):
+    """
+    Execute the specified FlowWorker and stream progress updates.
+    Currently only supports parsing_rules_worker.
+    """
+    logger.info(f"Calling worker {worker_name} with streaming")
+    runtime = get_runtime(session_id)
+    flow_worker = get_flow_worker(worker_name)
+    
+    async def generate():
+        try:
+            worker = flow_worker()
+            
+            # Only parsing_rules_worker supports streaming
+            if worker_name == "parsing_rules_worker" and hasattr(worker, 'run_with_progress'):
+                # Get required inputs
+                args = []
+                for input_type in worker.input_data:
+                    args.append({t.__class__: t for t in runtime.state.values()}[input_type])
+                
+                # Stream progress - this completes the work and updates the context
+                async for progress in worker.run_with_progress(*args):
+                    try:
+                        yield f"data: {json.dumps(progress)}\n\n"
+                    except Exception as e:
+                        logger.exception(f"Error yielding progress: {e}")
+                        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+                        break
+                
+                # After streaming completes, save the results from context to state
+                try:
+                    if worker.context.parser_definition:
+                        runtime.set_state(worker.context.parser_definition)
+                    if worker.context.parsed_data:
+                        runtime.set_state(worker.context.parsed_data)
+                except Exception as e:
+                    logger.exception(f"Error saving results to state: {e}")
+                    yield f"data: {json.dumps({'error': f'Error saving results: {str(e)}', 'done': True})}\n\n"
+                    
+            else:
+                # Fallback for other workers - run normally and send completion
+                await runtime.run(worker)
+                yield f"data: {json.dumps({'done': True, 'message': 'Complete'})}\n\n"
+                
+        except Exception as e:
+            logger.exception(f"Error in generate(): {e}")
+            yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+    
+    response = StreamingResponse(generate(), media_type="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Connection"] = "keep-alive"
+    response.headers["X-Accel-Buffering"] = "no"  # Disable buffering for nginx
+    return response
+
+
 @app.get("/metrics")
 async def get_brain_metrics():
     brain_client = BrainClient()
@@ -188,10 +219,7 @@ async def submit_platform(session_id: int):
     except Exception as e:
         raise HTTPException(status_code=400, detail={"error": str(e)})
     runtime.set_state(platform_data)
-    gitlab_client = GitLabClient(
-        token=os.environ.get("GITLAB_API_TOKEN"),
-        project_id=os.environ.get("GITLAB_PROJECT_ID"),
-    )
+    gitlab_client = GitLabClient()
     gitlab_client.add_issue_comment(
         user_info_data.gitlab_issue, platform_data.to_gitlab_comment()
     )
@@ -209,10 +237,7 @@ async def process_metrics_dimensions(session_id: int):
         metrics_dimensions_data
     )
     runtime.set_state(metrics_dimensions_data)
-    gitlab_client = GitLabClient(
-        token=os.environ.get("GITLAB_API_TOKEN"),
-        project_id=os.environ.get("GITLAB_PROJECT_ID"),
-    )
+    gitlab_client = GitLabClient()
     gitlab_client.add_issue_comment(
         user_info_data.gitlab_issue, metrics_dimensions_data.to_gitlab_comment()
     )

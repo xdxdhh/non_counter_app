@@ -27,7 +27,7 @@ class Issue(BaseModel):
 class GitLabClient:
     """GitLab API client for fetching issues."""
     
-    def __init__(self, token: str, project_id: str):
+    def __init__(self):
         """
         Initialize GitLab API client.
         Args:
@@ -35,12 +35,12 @@ class GitLabClient:
             project_id: Project ID from Gitlab
         """
         self.api_base = "https://gitlab.com/api/v4"
-        self.token = token
+        self.token = os.environ.get("GITLAB_API_TOKEN")
+        self.project_id = os.environ.get("GITLAB_PROJECT_ID")
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        self.project_id = project_id
     
     def get_issue(self, issue_iid: int) -> Issue:
         """
