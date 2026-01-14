@@ -7,7 +7,6 @@ from dataclasses import field
 import openpyxl
 import os
 from typing import Literal
-import datetime
 
 class Coord(BaseModel):
     """
@@ -265,7 +264,7 @@ class PlatformData(FlowData):
     def to_gitlab_comment(self) -> str:
         lines: list[str] = []
         lines.append(f"### Platform - {self.name}")
-        lines.append(f"https://staging.brain.celus.net/admin/knowledgebase/platform/{self.pk}/")
+        lines.append(f"{os.environ.get('BRAIN_URL')}/admin/knowledgebase/platform/{self.pk}/")
         return "\n".join(lines)
 
 class UserInfoData(FlowData):
@@ -459,13 +458,13 @@ class MetricsDimensionsData(FlowData):
         for metric in self.metrics:
             lines.append(
             f"- {metric.data_metric} - `{metric.brain_metric.short_name}`: "
-            f"https://staging.brain.celus.net/admin/knowledgebase/metric/{metric.brain_metric.id}/"
+            f"{os.environ.get('BRAIN_URL')}/admin/knowledgebase/metric/{metric.brain_metric.id}/"
         )
         lines.append("### Dimensions")
         for dimension in self.dimensions:
             lines.append(
             f"- {dimension.data_dimension} - `{dimension.brain_dimension.short_name}`: "
-            f"https://staging.brain.celus.net/admin/knowledgebase/dimension/{dimension.brain_dimension.id}/"
+            f"{os.environ.get('BRAIN_URL')}/admin/knowledgebase/dimension/{dimension.brain_dimension.id}/"
         )
         return "\n".join(lines)
 
@@ -534,7 +533,7 @@ class ReportTypeData(FlowData):
     def to_gitlab_comment(self) -> str:
         lines: list[str] = []
         lines.append(f"### Report Type - {self.name}")
-        lines.append(f"https://staging.brain.celus.net/admin/knowledgebase/customreporttype/{self.pk}/")
+        lines.append(f"{os.environ.get('BRAIN_URL')}/admin/knowledgebase/customreporttype/{self.pk}/")
         return "\n".join(lines)
 
 
