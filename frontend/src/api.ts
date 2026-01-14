@@ -37,6 +37,17 @@ export function extractErrorMessage(error: unknown): string {
   return error.message
 }
 
+const startSession = async () => {
+  console.log('Starting session')
+  try {
+    const response = await axios_client.post('start_session')
+    console.log('Response from backend:', response)
+    return response.data
+  } catch (error) {
+    console.error('Error starting session:', error)
+  }
+}
+
 const getState = async (sessionId: number, stateName: string) => {
   console.log('Getting state:', stateName)
   try {
@@ -194,5 +205,5 @@ const getBrainDimensions = async () => {
   }
 }
 
-export { axios_client, getState, setState, callWorker, callWorkerWithProgress, getBrainMetrics, getBrainDimensions }
+export { axios_client, getState, setState, callWorker, callWorkerWithProgress, getBrainMetrics, getBrainDimensions, startSession }
 export type { ProgressUpdate }

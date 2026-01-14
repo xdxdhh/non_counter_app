@@ -1,4 +1,4 @@
-# Non-Counter Data Processing Application
+# Non-Counter Data Processing Application - Lumona
 
 ## Setup
 

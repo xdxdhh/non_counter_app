@@ -464,12 +464,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed } from 'vue'
-import axios from 'axios'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import FloatLabel from 'primevue/floatlabel'
 import Textarea from 'primevue/textarea'
-import FileUpload from 'primevue/fileupload'
 import Button from 'primevue/button'
 import MultiSelect from 'primevue/multiselect'
 import Select from 'primevue/select'
@@ -482,7 +480,7 @@ import StepItem from 'primevue/stepitem'
 import Step from 'primevue/step'
 import StepPanel from 'primevue/steppanel'
 import Divider from 'primevue/divider'
-import DatePicker from 'primevue/datepicker'
+
 
 import {
   axios_client,
@@ -493,6 +491,7 @@ import {
   getBrainMetrics,
   getBrainDimensions,
   extractErrorMessage,
+  startSession,
 } from './api'
 import type { BrainMetric, BrainDimension, MetricMapping, DimensionMapping, ProgressUpdate } from './api'
 
@@ -884,8 +883,12 @@ const translateData = async () => {
 
 onMounted(async () => {
   try {
-    const response = await axios.post('http://127.0.0.1:8000/start_session')
-    sessionId.value = response.data.session_id
+    const response = await startSession()
+    if (!response) {
+      console.error('Failed to start session: no response')
+      return
+    }
+    sessionId.value = response.session_id
     const metrics = await getBrainMetrics()
     brainMetrics.value = metrics || []
     const dims = await getBrainDimensions()
@@ -928,17 +931,6 @@ onMounted(async () => {
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
-}
-.send-button {
-  padding: 8px 16px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.send-button:hover {
-  background-color: #0056b3;
 }
 
 .p-multiselect {
